@@ -1,0 +1,2 @@
+openapi_key="sk-paoS-7pQ-dHEYATN0wZdaUYFH1vxpPVAquGdoMsOW9T3BlbkFJcKKa5kHNNM_Cq1aGN-GPfhge9Kf9YPPprLcR1-5RoA"
+serpapi_key="24706d9182f49f9accd78c6fd9b2248cb012a87231d760d16a99d4774e57748e"
