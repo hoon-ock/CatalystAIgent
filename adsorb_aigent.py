@@ -23,6 +23,27 @@ class AdaptReasoningParser(BaseModel):
         description="preamble to reasoning modules"
     )  
 
+class AdaptSolutionParser(BaseModel):
+    """Information gathering plan"""
+
+    human_solution: Optional[List[str]] = Field(description="Human help in solving the problem")
+
+    solution: List[str] = Field(
+        description="Detailed adsorption configurations likely to be the most stable configuration, including adsorption site type, binding atoms in the adsorbate and surface, the number of binding atoms"
+    )
+
+class AdaptInputParser(BaseModel):
+    """Information gathering plan"""
+
+    human_solution: Optional[List[str]] = Field(description="Human help in solving the problem")
+
+    adsorption_site_type: str = Field(description="Type of adsorption site (e.g., ontop, bridge, hollow; in lower case)")
+    binding_atoms_in_adsorbate: List[str] = Field(description="Binding atoms in the adsorbate")
+    binding_atoms_on_surface: List[str] = Field(description="Binding atoms on the surface")
+    number_of_binding_atoms: int = Field(description="Number of binding atoms on the surface")
+    orientation_of_adsorbate: str = Field(description="Orientation of the adsorbate (e.g., end-on, side-on)")
+  
+
 def info_reasoning_adapter(model, parser=AdaptReasoningParser):
     information_gathering_adapt_prompt = PromptTemplate(
         input_variables=["observations", "reasoning"], 
@@ -39,18 +60,7 @@ def info_reasoning_adapter(model, parser=AdaptReasoningParser):
     adapter = information_gathering_adapt_prompt | (model).with_structured_output(parser)
     return adapter
 
-
-class AdaptSolutionParser(BaseModel):
-    """Information gathering plan"""
-
-    human_solution: Optional[List[str]] = Field(description="Human help in solving the problem")
-
-    solution: List[str] = Field(
-        description="Detailed adsorption configurations likely to be the most stable configuration, including adsorption site type, binding atoms in the adsorbate and surface, the number of binding atoms"
-    )
-
-
-def solution_planner(model, parser=AdaptSolutionParser):
+def solution_planner(model, parser=AdaptInputParser):
     solution_planner_prompt = PromptTemplate(
         input_variables=["observations", "adapter_solution_reasoning"],
         template=(
@@ -87,17 +97,6 @@ def solution_planner(model, parser=AdaptSolutionParser):
 #             other information]"
 #     )
 
-class AdaptInputParser(BaseModel):
-    """Information gathering plan"""
-
-    human_solution: Optional[List[str]] = Field(description="Human help in solving the problem")
-
-    adsorption_site_type: str = Field(description="Type of adsorption site (e.g., ontop, bridge, hollow; in lower case)")
-    binding_atoms_in_adsorbate: List[str] = Field(description="Binding atoms in the adsorbate")
-    binding_atoms_on_surface: List[str] = Field(description="Binding atoms on the surface")
-    number_of_binding_atoms: int = Field(description="Number of binding atoms on the surface")
-    orientation_of_adsorbate: str = Field(description="Orientation of the adsorbate (e.g., end-on, side-on)")
-  
 
 def input_summarizer(model, parser=AdaptInputParser):
     information_gathering_adapt_prompt = PromptTemplate(
@@ -198,20 +197,28 @@ def process_reasoning_solution(system_id,
     orientation_critic_valid = False
     internal_loop_count = 0
     while not (site_critic_valid and orientation_critic_valid):
-        # Solution step
+        # # Solution step
+        # print("Solution step...")
+        # sol_adapter = solution_planner(model=llm_model)
+        # sol_result = sol_adapter.invoke({
+        #     "observations": observations,
+        #     "adapter_solution_reasoning": reasoning_result.adapted_prompts,
+        # })
+
+        # # Input summarization step
+        # print("Input summarization step...")
+        # input_adapter = input_summarizer(model=llm_model)
+        # #breakpoint()
+        # input_result = input_adapter.invoke({
+        #     "observations": sol_result.solution,
+        # })
+
+        # Solution step version 2
         print("Solution step...")
-        sol_adapter = solution_planner(model=llm_model)
-        sol_result = sol_adapter.invoke({
+        input_adapter = solution_planner(model=llm_model)
+        input_result = input_adapter.invoke({
             "observations": observations,
             "adapter_solution_reasoning": reasoning_result.adapted_prompts,
-        })
-
-        # Input summarization step
-        print("Input summarization step...")
-        input_adapter = input_summarizer(model=llm_model)
-        #breakpoint()
-        input_result = input_adapter.invoke({
-            "observations": sol_result.solution,
         })
 
 
@@ -390,14 +397,16 @@ if __name__ == '__main__':
     # define system_id
     system_id = "71_2537_62"
     num_site = 10
-    mode = "llm-guided_site_heuristic_placement"
+    mode = "llm-guided_site_heuristic_placement" # "llm-guided"
+    critic_activate = True
+    reviwer_activate = True
     # define paths
     question_path = "/home/hoon/llm-agent/adsorb/reasoning.txt"
     knowledge_path = "/home/hoon/llm-agent/adsorb/knowledge.txt"
     metadata_path = "/home/hoon/llm-agent/adsorb/data/processed/updated_sid_to_details.pkl"
     bulk_db_path = "/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/bulks.pkl"
     ads_db_path = "/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/adsorbates.pkl"
-    save_dir = f"/home/hoon/llm-agent/adsorb/{system_id}-2/"
+    save_dir = f"/home/hoon/llm-agent/adsorb/{system_id}-sol-update/"
 
     
 
