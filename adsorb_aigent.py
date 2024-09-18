@@ -11,7 +11,7 @@ from fairchem.core.models.model_registry import model_name_to_local_file
 from fairchem.core.common.relaxation.ase_utils import OCPCalculator
 from ase.optimize import BFGS
 
-class adapt_reasoning_parser(BaseModel):
+class AdaptReasoningParser(BaseModel):
     """Information gathering plan"""
 
     other: Optional[str] = Field(description="other information about the adsorbate-catalyst system")
@@ -23,7 +23,7 @@ class adapt_reasoning_parser(BaseModel):
         description="preamble to reasoning modules"
     )  
 
-def info_reasoning_adapter(model, parser=adapt_reasoning_parser):
+def info_reasoning_adapter(model, parser=AdaptReasoningParser):
     information_gathering_adapt_prompt = PromptTemplate(
         input_variables=["observations", "reasoning"], 
         template=(
@@ -40,7 +40,7 @@ def info_reasoning_adapter(model, parser=adapt_reasoning_parser):
     return adapter
 
 
-class adapt_solution_parser(BaseModel):
+class AdaptSolutionParser(BaseModel):
     """Information gathering plan"""
 
     human_solution: Optional[List[str]] = Field(description="Human help in solving the problem")
@@ -50,7 +50,7 @@ class adapt_solution_parser(BaseModel):
     )
 
 
-def solution_planner(model, parser=adapt_solution_parser):
+def solution_planner(model, parser=AdaptSolutionParser):
     solution_planner_prompt = PromptTemplate(
         input_variables=["observations", "adapter_solution_reasoning"],
         template=(
@@ -72,22 +72,34 @@ def solution_planner(model, parser=adapt_solution_parser):
     return recon
 
 
-class adapt_input_parser(BaseModel):
+# class AdaptInputParser(BaseModel):
+#     """Information gathering plan"""
+
+#     human_solution: Optional[List[str]] = Field(description="Human help in solving the problem")
+
+#     solution: List[str] = Field(
+#     #solution: List[Dict[str, Union[str, List[str]]]] = Field(
+#         description="Summarize the prompt to simple list containing \
+#             [adsorption site type (in lower case), \
+#             list of binding atoms for that site, \
+#             list of binding atoms in the adsorbate, \
+#             approximate orientation configuration of adsorbate (e.g., side-on, end-on, etc. in lower case),\
+#             other information]"
+#     )
+
+class AdaptInputParser(BaseModel):
     """Information gathering plan"""
 
     human_solution: Optional[List[str]] = Field(description="Human help in solving the problem")
 
-    solution: List[str] = Field(
-    #solution: List[Dict[str, Union[str, List[str]]]] = Field(
-        description="Summarize the prompt to simple list containing \
-            [adsorption site type (in lower case), \
-            list of binding atoms for that site, \
-            list of binding atoms in the adsorbate, \
-            approximate orientation configuration of adsorbate (e.g., side-on, end-on, etc. in lower case),\
-            other information]"
-    )
+    adsorption_site_type: str = Field(description="Type of adsorption site (e.g., ontop, bridge, hollow; in lower case)")
+    binding_atoms_in_adsorbate: List[str] = Field(description="Binding atoms in the adsorbate")
+    binding_atoms_on_surface: List[str] = Field(description="Binding atoms on the surface")
+    number_of_binding_atoms: int = Field(description="Number of binding atoms on the surface")
+    orientation_of_adsorbate: str = Field(description="Orientation of the adsorbate (e.g., end-on, side-on)")
+  
 
-def input_summarizer(model, parser=adapt_input_parser):
+def input_summarizer(model, parser=AdaptInputParser):
     information_gathering_adapt_prompt = PromptTemplate(
         input_variables=["observations"], 
         template=(
@@ -108,6 +120,50 @@ def input_summarizer(model, parser=adapt_input_parser):
     adapter = information_gathering_adapt_prompt | (model).with_structured_output(parser)
     return adapter
 
+
+# Critique 1: Site Type Matching Binding Surface Atoms
+class SiteTypeCriticParser(BaseModel):
+    """Critique for site type matching binding surface atoms"""
+    solution: int = Field(description="1 if the site type matches the number of binding surface atoms, otherwise 0")
+
+def site_type_critic(model, parser=SiteTypeCriticParser):
+    site_type_prompt = PromptTemplate(
+        input_variables=["observations", "adsorption_site_type", "binding_atoms_on_surface","knowledge"],
+        template=(
+            "You are an expert in catalyst and surface chemistry.\n"
+            "Observations: {observations}\n"
+            "Adsorption Site Type: {adsorption_site_type}\n"
+            "Binding Atoms on Surface: {binding_atoms_on_surface}\n"
+            "Knowledge: {knowledge}\n"
+            "Determine whether the site type matches the number of binding surface atoms.\n"
+            "If the site type matches, return 1; otherwise, return 0.\n"
+        )
+    )
+    adapter = site_type_prompt | model.with_structured_output(parser)
+    return adapter
+
+# Critique 2: Orientation Matching Binding Atoms in the Adsorbate
+class OrientationCriticParser(BaseModel):
+    """Critique for orientation matching binding atoms in the adsorbate"""
+    solution: int = Field(description="1 if the orientation matches the binding atoms in the adsorbate, otherwise 0")
+
+def orientation_critic(model, parser=OrientationCriticParser):
+    orientation_prompt = PromptTemplate(
+        input_variables=["observations", "binding_atoms_in_adsorbate",  "orientation_of_adsorbate","knowledge"],
+        template=(
+            "You are an expert in catalyst and surface chemistry.\n"
+            "Observation: {observations}\n"
+            "Binding Atoms in Adsorbate: {binding_atoms_in_adsorbate}\n"
+            "Orientation: {orientation_of_adsorbate}\n"
+            "Knowledge: {knowledge}\n"
+            "Determine whether the orientation matches the binding atoms in the adsorbate.\n"
+            "If the orientation fully matches, return 1; otherwise, return 0.\n"
+        )
+    )
+    adapter = orientation_prompt | model.with_structured_output(parser)
+    return adapter
+
+
 def derive_input_prompt(system_id, metadata_path):
     sid_to_details = pd.read_pickle(metadata_path)
     miller = sid_to_details[system_id][1]
@@ -121,6 +177,7 @@ def process_reasoning_solution(system_id,
                                num_site, 
                                metadata_path, 
                                question_path,
+                               knowledge_path,
                                bulk_db_path,
                                ads_db_path, 
                                llm_model,
@@ -128,6 +185,7 @@ def process_reasoning_solution(system_id,
     # Derive the initial input prompt from system_id
     observations = derive_input_prompt(system_id, metadata_path)
     reasoning_questions=load_text_file(question_path)
+    knowledge_statements=load_text_file(knowledge_path)
 
     # Reasoning step
     print("Reasoning step...")
@@ -136,23 +194,72 @@ def process_reasoning_solution(system_id,
         "observations": observations,
         "reasoning": reasoning_questions,
     })
+    site_critic_valid = False
+    orientation_critic_valid = False
+    internal_loop_count = 0
+    while not (site_critic_valid and orientation_critic_valid):
+        # Solution step
+        print("Solution step...")
+        sol_adapter = solution_planner(model=llm_model)
+        sol_result = sol_adapter.invoke({
+            "observations": observations,
+            "adapter_solution_reasoning": reasoning_result.adapted_prompts,
+        })
 
-    # Solution step
-    print("Solution step...")
-    sol_adapter = solution_planner(model=llm_model)
-    sol_result = sol_adapter.invoke({
-        "observations": observations,
-        "adapter_solution_reasoning": reasoning_result.adapted_prompts,
-    })
+        # Input summarization step
+        print("Input summarization step...")
+        input_adapter = input_summarizer(model=llm_model)
+        #breakpoint()
+        input_result = input_adapter.invoke({
+            "observations": sol_result.solution,
+        })
 
-    # Input summarization step
-    print("Input summarization step...")
-    input_adapter = input_summarizer(model=llm_model)
-    #breakpoint()
-    input_result = input_adapter.invoke({
-        "observations": sol_result.solution,
-    })
-    config_result = convert_dict(input_result.solution)
+
+        # Apply critic to evaluate the solution
+        print("Critique step...")
+        site_critic_adapter = site_type_critic(model=llm_model)
+        site_critic_result = site_critic_adapter.invoke({
+            "observations": observations,
+            "adsorption_site_type": input_result.adsorption_site_type,
+            "binding_atoms_on_surface": input_result.binding_atoms_on_surface,
+            "knowledge": knowledge_statements,  
+        })
+
+        orientation_critic_adapter = orientation_critic(model=llm_model)
+        orientation_critic_result = orientation_critic_adapter.invoke({
+            "observations": observations,
+            "binding_atoms_in_adsorbate": input_result.binding_atoms_in_adsorbate,
+            "orientation_of_adsorbate": input_result.orientation_of_adsorbate,
+            "knowledge": knowledge_statements,  
+        })
+
+        # Check if the critiques are valid
+        site_critic_valid = site_critic_result.solution == 1
+        orientation_critic_valid = orientation_critic_result.solution == 1
+        internal_loop_count += 1
+        print(f"Internal loop count: {internal_loop_count}")
+        # Check if the critiques are valid
+        # if not (site_critic_valid and orientation_critic_valid):
+        #     print("Critique failed. Retrying...")
+        if not site_critic_valid:
+            print("Site type critique failed. Retrying...")
+            print(f"Site type: {input_result.adsorption_site_type}, Binding surface atoms: {input_result.binding_atoms_on_surface}")
+        if not orientation_critic_valid:
+            print("Orientation critique failed. Retrying...")
+            print(f"Orientation: {input_result.orientation_of_adsorbate}, Binding atoms in adsorbate: {input_result.binding_atoms_in_adsorbate}")
+
+
+
+    # config_result = convert_dict(input_result.solution)
+    # keys=['site_type', 'site_atoms', 'ads_bind_atoms', 'orient', 'others']
+    config_result = {'site_type': input_result.adsorption_site_type,
+                     'site_atoms': input_result.binding_atoms_on_surface,
+                     'num_site_atoms': input_result.number_of_binding_atoms,
+                     'ads_bind_atoms': input_result.binding_atoms_in_adsorbate,
+                     'orient': input_result.orientation_of_adsorbate,
+                     'others': input_result.human_solution,
+                     }
+                     #'internal_loop_count': internal_loop_count}
 
 
     # evaluate the energy
@@ -160,7 +267,7 @@ def process_reasoning_solution(system_id,
     ## when loading the adslab, the input_result should be used!
     ## this part should be updated!!
     adslabs, info = load_adslabs(system_id, mode, num_site, config_result, metadata_path, bulk_db_path, ads_db_path)
-    relaxed_energies = []
+    
     # adslabs = adslabs[:3] # need to update!!!!!
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
@@ -170,8 +277,9 @@ def process_reasoning_solution(system_id,
         os.makedirs(traj_dir)
 
     print("Relaxing adslabs...")
+    relaxed_energies = []
     for i, adslab in enumerate(adslabs):
-        save_path = os.path.join(traj_dir, f"adslab_{i}.traj")
+        save_path = os.path.join(traj_dir, f"config_{i}.traj")
         # breakpoint()
         adslab = relax_adslab(adslab, save_path)
         relaxed_energies.append(adslab.get_potential_energy())
@@ -185,10 +293,10 @@ def process_reasoning_solution(system_id,
     result_dict['full_solution'] = sol_result.solution
     result_dict['min_energy'] = min_energy
     result_dict['min_idx'] = min_idx
-
+    result_dict['internal_loop_count'] = internal_loop_count
 
     # Return the result as a dictionary with an ID (replace 'some_id' with actual identifier logic if needed)
-    result = {system_id: result_dict} 
+    result = {system_id: result_dict}
     return result
 
 def load_adslabs(system_id,
@@ -214,7 +322,7 @@ def load_adslabs(system_id,
     info = [mpid, miller, shift, top, ads, cat]
     site_type = config_result['site_type']
     site_atoms = config_result['site_atoms']
-    
+    # breakpoint()
     
     bulk = Bulk(bulk_src_id_from_db=mpid, bulk_db_path=bulk_db_path)
     slabs = Slab.from_bulk_get_specific_millers(bulk=bulk, specific_millers=miller)
@@ -285,6 +393,7 @@ if __name__ == '__main__':
     mode = "llm-guided_site_heuristic_placement"
     # define paths
     question_path = "/home/hoon/llm-agent/adsorb/reasoning.txt"
+    knowledge_path = "/home/hoon/llm-agent/adsorb/knowledge.txt"
     metadata_path = "/home/hoon/llm-agent/adsorb/data/processed/updated_sid_to_details.pkl"
     bulk_db_path = "/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/bulks.pkl"
     ads_db_path = "/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/adsorbates.pkl"
@@ -298,6 +407,7 @@ if __name__ == '__main__':
                                         num_site,
                                         metadata_path, 
                                         question_path, 
+                                        knowledge_path,
                                         bulk_db_path,
                                         ads_db_path,
                                         llm_model,
