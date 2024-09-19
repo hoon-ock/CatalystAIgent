@@ -309,6 +309,85 @@ def run_adsorb_aigent(system_id,
         target_traj_path = os.path.join(traj_dir, f"config_{min_idx}.traj")
         relaxed_adslab = read(target_traj_path)
         site_analyzer = SiteAnalyzer(relaxed_adslab)
+        binding_info = site_analyzer.binding_info[0]
+        print("Convert binding information to text...")
+        structure_adapter = structure_analyzer(model=llm_model)
+        structure_result = structure_adapter.invoke({
+            "observations": observations,
+            "binding_information": binding_info,
+        })
+        site_critic_valid = False
+        orientation_critic_valid = False
+        critic_loop_count2 = 0
+
+        while not (site_critic_valid and orientation_critic_valid):
+            print("Review step...")
+            review_adapter = solution_reviewer(model=llm_model)
+            review_result = review_adapter.invoke({
+                "initial_configuration": solution_result.text,
+                "relaxed_configuration": structure_result.text,
+                "adapter_solution_reasoning": reasoning_result.adapted_prompts,
+            })
+
+            if critic_activate:
+                # Apply critic to evaluate the solution
+                print("Critique step... (2)")
+                site_critic_adapter = site_type_critic(model=llm_model)
+                site_critic_result = site_critic_adapter.invoke({
+                    "observations": observations,
+                    "adsorption_site_type": review_result.adsorption_site_type,
+                    "binding_atoms_on_surface": review_result.binding_atoms_on_surface,
+                    "knowledge": knowledge_statements,  
+                })
+
+                orientation_critic_adapter = orientation_critic(model=llm_model)
+                orientation_critic_result = orientation_critic_adapter.invoke({
+                    "observations": observations,
+                    "binding_atoms_in_adsorbate": review_result.binding_atoms_in_adsorbate,
+                    "orientation_of_adsorbate": review_result.orientation_of_adsorbate,
+                    "knowledge": knowledge_statements,  
+                })
+                # Check if the critiques are valid
+                site_critic_valid = site_critic_result.solution == 1
+                orientation_critic_valid = orientation_critic_result.solution == 1
+                critic_loop_count2 += 1
+                print(f"critic loop count: {critic_loop_count2}")
+                # Check if the critiques are valid
+                # if not (site_critic_valid and orientation_critic_valid):
+                #     print("Critique failed. Retrying...")
+                if not site_critic_valid:
+                    print("Site type critique failed. Retrying...")
+                    print(f"Site type: {review_result.adsorption_site_type}, Binding surface atoms: {review_result.binding_atoms_on_surface}")
+                if not orientation_critic_valid:
+                    print("Orientation critique failed. Retrying...")
+                    print(f"Orientation: {review_result.orientation_of_adsorbate}, Binding atoms in adsorbate: {review_result.binding_atoms_in_adsorbate}")
+            else:
+                site_critic_valid = True
+                orientation_critic_valid = True
+
+        config_result = {'site_type': review_result.adsorption_site_type,
+                        'site_atoms': review_result.binding_atoms_on_surface,
+                        'num_site_atoms': review_result.number_of_binding_atoms,
+                        'ads_bind_atoms': review_result.binding_atoms_in_adsorbate,
+                        'orient': review_result.orientation_of_adsorbate,
+                        'reasoning': review_result.reasoning,
+                        }
+        print("Loading adslabs... (2)")
+        ## when loading the adslab, the solution_result should be used!
+        adslabs, info = load_adslabs(system_id, mode, num_site, config_result, metadata_path, bulk_db_path, ads_db_path)
+        
+        print("Relaxing adslabs... (2)")
+        # relaxed_energies = []
+        for j, adslab in enumerate(adslabs):
+            save_path = os.path.join(traj_dir, f"config_{j+i+1}.traj")
+            # breakpoint()
+            adslab = relax_adslab(adslab, gnn_model, save_path)
+            relaxed_energies.append(adslab.get_potential_energy())
+
+        min_energy = np.min(relaxed_energies)
+        min_idx = np.argmin(relaxed_energies)
+
+
 
     # Convert to dictionary
     result_dict = {'system': info}
@@ -317,10 +396,15 @@ def run_adsorb_aigent(system_id,
     result_dict['min_energy'] = min_energy
     result_dict['min_idx'] = min_idx
     result_dict['critic_loop_count'] = [critic_loop_count1, critic_loop_count2] if reviwer_activate else critic_loop_count1
+    result_dict['config_no_count'] = [i+1, j+1] if reviwer_activate else i
 
     # Return the result as a dictionary with an ID (replace 'some_id' with actual identifier logic if needed)
     # result = {system_id: result_dict}
     return result_dict
+
+
+
+
 
 def load_adslabs(system_id,
                  mode, 
@@ -378,23 +462,23 @@ def load_text_file(file_path):
     except Exception as e:
         return f"An error occurred: {e}"
 
-def convert_dict(input_solution, keys=['site_type', 'site_atoms', 'ads_bind_atoms', 'orient', 'others']):
-    # Clean up the list (remove extra spaces)
-    cleaned_list = [item.strip() for item in input_solution]
+# def convert_dict(input_solution, keys=['site_type', 'site_atoms', 'ads_bind_atoms', 'orient', 'others']):
+#     # Clean up the list (remove extra spaces)
+#     cleaned_list = [item.strip() for item in input_solution]
 
-    # Check if the input_solution has less than 5 entries and only use relevant keys
-    if len(cleaned_list) < len(keys):
-        # Use only the first four keys
-        keys = keys[:len(cleaned_list)]
+#     # Check if the input_solution has less than 5 entries and only use relevant keys
+#     if len(cleaned_list) < len(keys):
+#         # Use only the first four keys
+#         keys = keys[:len(cleaned_list)]
 
-    # Create the dictionary by zipping keys and cleaned list
-    result_dict = dict(zip(keys, cleaned_list))
+#     # Create the dictionary by zipping keys and cleaned list
+#     result_dict = dict(zip(keys, cleaned_list))
 
-    # Convert 'site_type' and 'orient' values to lowercase
-    result_dict['site_type'] = result_dict['site_type'].lower()
-    result_dict['orient'] = result_dict['orient'].lower()
+#     # Convert 'site_type' and 'orient' values to lowercase
+#     result_dict['site_type'] = result_dict['site_type'].lower()
+#     result_dict['orient'] = result_dict['orient'].lower()
 
-    return result_dict
+#     return result_dict
 
 if __name__ == '__main__':
     import pandas as pd
