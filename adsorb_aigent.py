@@ -35,14 +35,14 @@ class AdaptSolutionParser(BaseModel):
 class AdaptInputParser(BaseModel):
     """Information gathering plan"""
 
-    human_solution: Optional[List[str]] = Field(description="Human help in solving the problem")
+    # human_solution: Optional[List[str]] = Field(description="Human help in solving the problem")
 
     adsorption_site_type: str = Field(description="Type of adsorption site (e.g., ontop, bridge, hollow; in lower case)")
     binding_atoms_in_adsorbate: List[str] = Field(description="Binding atoms in the adsorbate")
     binding_atoms_on_surface: List[str] = Field(description="Binding atoms on the surface")
     number_of_binding_atoms: int = Field(description="Number of binding atoms on the surface")
     orientation_of_adsorbate: str = Field(description="Orientation of the adsorbate (e.g., end-on, side-on)")
-  
+    reasoning: str = Field(description="Reasoning for the derived configuration")
 
 def info_reasoning_adapter(model, parser=AdaptReasoningParser):
     information_gathering_adapt_prompt = PromptTemplate(
@@ -171,16 +171,18 @@ def derive_input_prompt(system_id, metadata_path):
     prompt = f"The adsorbate is {ads} and the catalyst surface is {cat} {miller}."
     return prompt
 
-def process_reasoning_solution(system_id,
-                               mode,
-                               num_site, 
-                               metadata_path, 
-                               question_path,
-                               knowledge_path,
-                               bulk_db_path,
-                               ads_db_path, 
-                               llm_model,
-                               save_dir):
+def run_adsorb_aigent(system_id,
+                  mode,
+                  num_site, 
+                  metadata_path, 
+                  question_path,
+                  knowledge_path,
+                  bulk_db_path,
+                  ads_db_path, 
+                  llm_model,
+                  gnn_model,
+                  save_dir,
+                  critic_activate=True):
     # Derive the initial input prompt from system_id
     observations = derive_input_prompt(system_id, metadata_path)
     reasoning_questions=load_text_file(question_path)
@@ -195,7 +197,7 @@ def process_reasoning_solution(system_id,
     })
     site_critic_valid = False
     orientation_critic_valid = False
-    internal_loop_count = 0
+    critic_loop_count1 = 0
     while not (site_critic_valid and orientation_critic_valid):
         # # Solution step
         # print("Solution step...")
@@ -239,22 +241,24 @@ def process_reasoning_solution(system_id,
             "orientation_of_adsorbate": input_result.orientation_of_adsorbate,
             "knowledge": knowledge_statements,  
         })
-
-        # Check if the critiques are valid
-        site_critic_valid = site_critic_result.solution == 1
-        orientation_critic_valid = orientation_critic_result.solution == 1
-        internal_loop_count += 1
-        print(f"Internal loop count: {internal_loop_count}")
-        # Check if the critiques are valid
-        # if not (site_critic_valid and orientation_critic_valid):
-        #     print("Critique failed. Retrying...")
-        if not site_critic_valid:
-            print("Site type critique failed. Retrying...")
-            print(f"Site type: {input_result.adsorption_site_type}, Binding surface atoms: {input_result.binding_atoms_on_surface}")
-        if not orientation_critic_valid:
-            print("Orientation critique failed. Retrying...")
-            print(f"Orientation: {input_result.orientation_of_adsorbate}, Binding atoms in adsorbate: {input_result.binding_atoms_in_adsorbate}")
-
+        if critic_activate:
+            # Check if the critiques are valid
+            site_critic_valid = site_critic_result.solution == 1
+            orientation_critic_valid = orientation_critic_result.solution == 1
+            critic_loop_count1 += 1
+            print(f"critic loop count: {critic_loop_count1}")
+            # Check if the critiques are valid
+            # if not (site_critic_valid and orientation_critic_valid):
+            #     print("Critique failed. Retrying...")
+            if not site_critic_valid:
+                print("Site type critique failed. Retrying...")
+                print(f"Site type: {input_result.adsorption_site_type}, Binding surface atoms: {input_result.binding_atoms_on_surface}")
+            if not orientation_critic_valid:
+                print("Orientation critique failed. Retrying...")
+                print(f"Orientation: {input_result.orientation_of_adsorbate}, Binding atoms in adsorbate: {input_result.binding_atoms_in_adsorbate}")
+        else:
+            site_critic_valid = True
+            orientation_critic_valid = True
 
 
     # config_result = convert_dict(input_result.solution)
@@ -264,7 +268,7 @@ def process_reasoning_solution(system_id,
                      'num_site_atoms': input_result.number_of_binding_atoms,
                      'ads_bind_atoms': input_result.binding_atoms_in_adsorbate,
                      'orient': input_result.orientation_of_adsorbate,
-                     'others': input_result.human_solution,
+                     'reasoning': input_result.reasoning,
                      }
                      #'internal_loop_count': internal_loop_count}
 
@@ -288,23 +292,77 @@ def process_reasoning_solution(system_id,
     for i, adslab in enumerate(adslabs):
         save_path = os.path.join(traj_dir, f"config_{i}.traj")
         # breakpoint()
-        adslab = relax_adslab(adslab, save_path)
+        adslab = relax_adslab(adslab, gnn_model, save_path)
         relaxed_energies.append(adslab.get_potential_energy())
 
     min_energy = np.min(relaxed_energies)
     min_idx = np.argmin(relaxed_energies)
 
+    # Review the relaxed configurations
+    # step 1: load the relaxed adslab with the min energy
+    # step 2: implement the reivew module to update the configuration
+    # step 3: place the adsorbate on the surface based on the updated configuration
+    # step 4: run the relaxations again
+    # step 5: find the minimum energy configuration again
+
+    site_critic_valid = False
+    orientation_critic_valid = False
+    critic_loop_count2 = 0
+    # while not (site_critic_valid and orientation_critic_valid):
+    #     # Solution step version 2
+    #     print("Solution step...")
+    #     input_adapter = solution_planner(model=llm_model)
+    #     input_result = input_adapter.invoke({
+    #         "observations": observations,
+    #         "adapter_solution_reasoning": reasoning_result.adapted_prompts,
+    #     })
+
+
+    #     # Apply critic to evaluate the solution
+    #     print("Critique step...")
+    #     site_critic_adapter = site_type_critic(model=llm_model)
+    #     site_critic_result = site_critic_adapter.invoke({
+    #         "observations": observations,
+    #         "adsorption_site_type": input_result.adsorption_site_type,
+    #         "binding_atoms_on_surface": input_result.binding_atoms_on_surface,
+    #         "knowledge": knowledge_statements,  
+    #     })
+
+    #     orientation_critic_adapter = orientation_critic(model=llm_model)
+    #     orientation_critic_result = orientation_critic_adapter.invoke({
+    #         "observations": observations,
+    #         "binding_atoms_in_adsorbate": input_result.binding_atoms_in_adsorbate,
+    #         "orientation_of_adsorbate": input_result.orientation_of_adsorbate,
+    #         "knowledge": knowledge_statements,  
+    #     })
+
+    #     # Check if the critiques are valid
+    #     site_critic_valid = site_critic_result.solution == 1
+    #     orientation_critic_valid = orientation_critic_result.solution == 1
+    #     critic_loop_count2 += 1
+    #     print(f"critic loop count: {critic_loop_count2}")
+    #     # Check if the critiques are valid
+    #     # if not (site_critic_valid and orientation_critic_valid):
+    #     #     print("Critique failed. Retrying...")
+    #     if not site_critic_valid:
+    #         print("Site type critique failed. Retrying...")
+    #         print(f"Site type: {input_result.adsorption_site_type}, Binding surface atoms: {input_result.binding_atoms_on_surface}")
+    #     if not orientation_critic_valid:
+    #         print("Orientation critique failed. Retrying...")
+    #         print(f"Orientation: {input_result.orientation_of_adsorbate}, Binding atoms in adsorbate: {input_result.binding_atoms_in_adsorbate}")
+
+
     # Convert to dictionary
     result_dict = {'system': info}
     result_dict.update(config_result)
-    result_dict['full_solution'] = sol_result.solution
+    # result_dict['full_solution'] = input_result.reasoning
     result_dict['min_energy'] = min_energy
     result_dict['min_idx'] = min_idx
-    result_dict['internal_loop_count'] = internal_loop_count
+    result_dict['critic_loop_count'] = [critic_loop_count1, critic_loop_count2]
 
     # Return the result as a dictionary with an ID (replace 'some_id' with actual identifier logic if needed)
-    result = {system_id: result_dict}
-    return result
+    # result = {system_id: result_dict}
+    return result_dict
 
 def load_adslabs(system_id,
                  mode, 
@@ -342,9 +400,9 @@ def load_adslabs(system_id,
     ase_atom_list = [*adslabs.atoms_list]
     return ase_atom_list, info
 
-def relax_adslab(adslab, save_path):
+def relax_adslab(adslab, model_name, save_path):
     # relax the adsorbate slab
-    checkpoint_path = model_name_to_local_file('EquiformerV2-31M-S2EF-OC20-All+MD', local_cache='/tmp/fairchem_checkpoints/')
+    checkpoint_path = model_name_to_local_file(model_name, local_cache='/tmp/fairchem_checkpoints/')
     calc = OCPCalculator(checkpoint_path=checkpoint_path, cpu=False)
     adslab.calc = calc
     opt = BFGS(adslab, trajectory=save_path)
@@ -388,41 +446,57 @@ if __name__ == '__main__':
     import os
     os.environ["OPENAI_API_KEY"] = openapi_key
     from langchain_openai import ChatOpenAI
+    import yaml
+    import shutil
 
+    # Load YAML file
+    with open('config.yaml', 'r') as file:
+        config = yaml.safe_load(file)
+
+    # Access the variables
+    system_info = config['system_info']
+    agent_settings = config['agent_settings']
+    paths = config['paths']
+    
+    # define system_id
+    system_id = system_info['system_id'] #"71_2537_62"
+    num_site = system_info['num_site']
+
+    # define settings
+    gpt_version = agent_settings['gpt_version']
+    gnn_model = agent_settings['gnn_model']
+    mode = agent_settings['mode'] #"llm-guided_site_heuristic_placement" # "llm-guided"
+    critic_activate = agent_settings['critic_activate'] #True
+    reviwer_activate = agent_settings['reviewer_activate'] #True
+    # define paths
+    question_path = paths['question_path'] #"/home/hoon/llm-agent/adsorb/reasoning.txt"
+    knowledge_path = paths['knowledge_path'] #"/home/hoon/llm-agent/adsorb/knowledge.txt"
+    metadata_path = paths['metadata_path'] #"/home/hoon/llm-agent/adsorb/data/processed/updated_sid_to_details.pkl"
+    bulk_db_path = paths['bulk_db_path']  #"/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/bulks.pkl"
+    ads_db_path = paths['ads_db_path'] #"/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/adsorbates.pkl"
+    save_dir = paths['save_dir']  #f"/home/hoon/llm-agent/results/{system_id}/"
 
     # define LLM model
-    llm_model = ChatOpenAI(model = "gpt-4o") #"gpt-3.5-turbo-0125")
-
-
-    # define system_id
-    system_id = "71_2537_62"
-    num_site = 10
-    mode = "llm-guided_site_heuristic_placement" # "llm-guided"
-    critic_activate = True
-    reviwer_activate = True
-    # define paths
-    question_path = "/home/hoon/llm-agent/adsorb/reasoning.txt"
-    knowledge_path = "/home/hoon/llm-agent/adsorb/knowledge.txt"
-    metadata_path = "/home/hoon/llm-agent/adsorb/data/processed/updated_sid_to_details.pkl"
-    bulk_db_path = "/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/bulks.pkl"
-    ads_db_path = "/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/adsorbates.pkl"
-    save_dir = f"/home/hoon/llm-agent/adsorb/{system_id}-sol-update/"
-
-    
+    llm_model = ChatOpenAI(model = gpt_version)
 
     # process reasoning and solution
-    result = process_reasoning_solution(system_id, 
-                                        mode,
-                                        num_site,
-                                        metadata_path, 
-                                        question_path, 
-                                        knowledge_path,
-                                        bulk_db_path,
-                                        ads_db_path,
-                                        llm_model,
-                                        save_dir)
+    result = run_adsorb_aigent(system_id, 
+                               mode,
+                               num_site,
+                               metadata_path, 
+                               question_path, 
+                               knowledge_path,
+                               bulk_db_path,
+                               ads_db_path,
+                               llm_model,
+                               gnn_model,
+                               save_dir,
+                               critic_activate)
     print(result)
-    # save the result
 
+    # save the result
     with open(os.path.join(save_dir, 'result.pkl'), 'wb') as f:
         pickle.dump(result, f)
+    # copy yaml file to save_dir
+    
+    shutil.copy('config.yaml', save_dir)
