@@ -442,7 +442,7 @@ if __name__ == '__main__':
     import pandas as pd
     import numpy as np  
     import pickle
-    from secret_key import openapi_key
+    from secret_keys import openapi_key
     import os
     os.environ["OPENAI_API_KEY"] = openapi_key
     from langchain_openai import ChatOpenAI
