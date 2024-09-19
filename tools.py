@@ -56,15 +56,15 @@ class SiteAnalyzer:
                 if connectivity[self.center_atom.index][idx_slab] == 1
             ]
             ads_idx_info = {
-                "adsorbate_idx": self.center_atom.index,
-                "adsorbate_element": elements[self.center_atom.index],
-                "slab_atom_elements": [
+                "adsorbate_binding_atom_indices": self.center_atom.index,
+                "adsorbate_binding_atom_elements": elements[self.center_atom.index],
+                "surface_binding_atom_elements": [
                     element
                     for idx_el, element in enumerate(elements)
                     if idx_el in bound_slab_idxs
                 ],
-                "slab_atom_idxs": bound_slab_idxs,
-                "bound_position": adslab_positions[self.center_atom.index],
+                "surface_binding_atom_indices": bound_slab_idxs,
+                "binding_positions": adslab_positions[self.center_atom.index],
             }
             binding_info.append(ads_idx_info)
         return binding_info    
@@ -75,7 +75,7 @@ class SiteAnalyzer:
         connectivity = self._get_connectivity(self.atoms, self.cutoff_multiplier)        
         second_binding_info = {}
         for interaction in self.binding_info:
-            slab_atom_idxs = interaction["slab_atom_idxs"]
+            slab_atom_idxs = interaction["surface_binding_atom_indices"]
             if len(slab_atom_idxs) != 0:
                 for idx in slab_atom_idxs:
                     # import pdb; pdb.set_trace()
@@ -106,15 +106,15 @@ class SiteAnalyzer:
                     if connectivity[idx][idx_slab] == 1
                 ]
                 ads_idx_info = {
-                    "adsorbate_idx": idx,
-                    "adsorbate_element": elements[idx],
-                    "slab_atom_elements": [
+                    "adsorbate_binding_atom_indices": idx,
+                    "adsorbate_binding_atom_elements": elements[idx],
+                    "surface_binding_atom_elements": [
                         element
                         for idx_el, element in enumerate(elements)
                         if idx_el in bound_slab_idxs
                     ],
-                    "slab_atom_idxs": bound_slab_idxs,
-                    "bound_position": adslab_positions[idx],
+                    "surface_binding_atom_indices": bound_slab_idxs,
+                    "binding_positions": adslab_positions[idx],
                 }
                 binding_info.append(ads_idx_info)
         return binding_info    
@@ -156,7 +156,7 @@ class SiteAnalyzer:
         Returns:
             (list[int]): number of interacting surface atoms for each adsorbate atom bound.
         """
-        return [len(binding["slab_atom_idxs"]) for binding in self.binding_info]
+        return [len(binding["surface_binding_atom_indices"]) for binding in self.binding_info]
     
     def get_center_site_type(self):
         """
@@ -165,7 +165,7 @@ class SiteAnalyzer:
         Returns:
             (list[int]): number of interacting surface atoms for each adsorbate atom bound.
         """
-        return [len(binding["slab_atom_idxs"]) for binding in self.center_binding_info]
+        return [len(binding["surface_binding_atom_indices"]) for binding in self.center_binding_info]
 
 
     def get_bound_atom_positions(self):
@@ -176,7 +176,7 @@ class SiteAnalyzer:
         """
         positions = []
         for atom in self.binding_info:
-            positions.append(atom["bound_position"])
+            positions.append(atom["binding_positions"])
         return positions    
 
     def get_minimum_site_proximity(self, site_to_compare):
@@ -216,9 +216,9 @@ class SiteAnalyzer:
                     tuple(np.sort(combo))
                 ] = adsorbate.get_distance(combo[0], combo[1], mic=True)        
         for ads_info in self.binding_info:
-            adsorbate_idx = ads_info["adsorbate_idx"]
+            adsorbate_idx = ads_info["adsorbate_binding_atom_indices"]
             bond_lengths["adsorbate-surface"][adsorbate_idx] = [
                 self.atoms.get_distances(adsorbate_idx, slab_idx, mic=True)[0]
-                for slab_idx in ads_info["slab_atom_idxs"]
+                for slab_idx in ads_info["surface_binding_atom_indices"]
             ]        
         return bond_lengths

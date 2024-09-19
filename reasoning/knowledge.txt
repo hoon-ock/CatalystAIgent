@@ -1,0 +1,9 @@
+[On-top Site: The adsorbate binds directly to a single surface atom.,
+Bridge Site: The adsorbate simultaneously binds to two adjacent surface atoms.,
+Hollow Site: The adsorbate interacts with three or more surface atoms, typically forming a triangular arrangement.,
+End-on Orientation: The adsorbate molecule attaches to the surface through one of its terminal atoms.,
+Side-on Orientation: The adsorbate interacts with the surface via multiple atoms along its side.,
+Site Matching: The adsorption site should correspond to the number of surface atoms available for binding.,
+Orientation Alignment: The binding atoms in the adsorbate should match its orientation on the surface.,
+The side-on orientation requires multiple binding atoms.,
+The end-on orientation requires just one binding atom.]

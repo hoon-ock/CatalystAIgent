@@ -7,11 +7,11 @@ agent_settings:
   gnn_model: "EquiformerV2-31M-S2EF-OC20-All+MD"
   mode: "llm-guided_site_heuristic_placement"
   critic_activate: true
-  reviewer_activate: true
+  reviewer_activate: false
 
 paths:
-  question_path: "/home/hoon/llm-agent/adsorb/reasoning.txt"
-  knowledge_path: "/home/hoon/llm-agent/adsorb/knowledge.txt"
+  question_path: "/home/hoon/llm-agent/reasoning/reasoning.txt"
+  knowledge_path: "/home/hoon/llm-agent/reasoning/knowledge.txt"
   metadata_path: "/home/hoon/llm-agent/adsorb/data/processed/updated_sid_to_details.pkl"
   bulk_db_path: "/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/bulks.pkl"
   ads_db_path: "/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/adsorbates.pkl"
