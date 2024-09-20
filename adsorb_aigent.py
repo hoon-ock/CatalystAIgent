@@ -185,7 +185,8 @@ def derive_input_prompt(system_id, metadata_path):
 
 def run_adsorb_aigent(system_id,
                   mode,
-                  num_site, 
+                  num_site,
+                  random_ratio, 
                   metadata_path, 
                   question_path,
                   knowledge_path,
@@ -274,7 +275,7 @@ def run_adsorb_aigent(system_id,
     print("Loading adslabs...")
     ## when loading the adslab, the solution_result should be used!
     ## this part should be updated!!
-    adslabs, info = load_adslabs(system_id, mode, num_site, config_result, metadata_path, bulk_db_path, ads_db_path)
+    adslabs, info = load_adslabs(system_id, mode, num_site, random_ratio, config_result, metadata_path, bulk_db_path, ads_db_path)
     
     # adslabs = adslabs[:3] # need to update!!!!!
     if not os.path.exists(save_dir):
@@ -374,7 +375,7 @@ def run_adsorb_aigent(system_id,
                         }
         print("Loading adslabs... (2)")
         ## when loading the adslab, the solution_result should be used!
-        adslabs, info = load_adslabs(system_id, mode, num_site, config_result, metadata_path, bulk_db_path, ads_db_path)
+        adslabs, info = load_adslabs(system_id, mode, num_site, random_ratio, config_result, metadata_path, bulk_db_path, ads_db_path)
         
         print("Relaxing adslabs... (2)")
         # relaxed_energies = []
@@ -408,7 +409,8 @@ def run_adsorb_aigent(system_id,
 
 def load_adslabs(system_id,
                  mode, 
-                 num_site, 
+                 num_site,
+                 random_ratio, 
                  config_result, 
                  metadata_path, 
                  bulk_db_path, 
@@ -438,7 +440,7 @@ def load_adslabs(system_id,
             slab = s
             break
     adsorbate = Adsorbate(adsorbate_smiles_from_db=ads, adsorbate_db_path=ads_db_path)
-    adslabs = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms)
+    adslabs = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
     ase_atom_list = [*adslabs.atoms_list]
     return ase_atom_list, info
 
@@ -503,6 +505,7 @@ if __name__ == '__main__':
     # define system_id
     system_id = system_info['system_id'] #"71_2537_62"
     num_site = system_info['num_site']
+    random_ratio = system_info['random_ratio']
 
     # define settings
     gpt_version = agent_settings['gpt_version']

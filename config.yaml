@@ -1,13 +1,14 @@
 system_info:
   system_id: "71_2537_62"
-  num_site: 10
+  num_site: 8
+  random_ratio: 0.2
 
 agent_settings:
   gpt_version: "gpt-4o"
   gnn_model: "EquiformerV2-31M-S2EF-OC20-All+MD"
   mode: "llm-guided_site_heuristic_placement"
   critic_activate: true
-  reviewer_activate: false
+  reviewer_activate: true
 
 paths:
   question_path: "/home/hoon/llm-agent/reasoning/reasoning.txt"
