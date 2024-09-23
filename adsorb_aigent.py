@@ -54,6 +54,15 @@ class AdaptCriticParser(BaseModel):
     human_solution: Optional[List[str]] = Field(description="Human help in solving the problem")
     solution: int = Field(description="1 if the observation is correct, otherwise 0")
 
+class AdaptIndexParser(BaseModel):
+    """Plan for gathering information about binding atom indices."""
+    
+    human_solution: Optional[List[str]] = Field(description="Human-provided help in solving the problem")
+
+    solution: List[int] = Field(
+        description="Indices of the binding atoms in the adsorbate (0-based indexing)"
+    )
+
 # Critique 1: Site Type Matching Binding Surface Atoms
 # class SiteTypeCriticParser(BaseModel):
 #     """Critique for site type matching binding surface atoms"""
@@ -174,14 +183,23 @@ def orientation_critic(model, parser=AdaptCriticParser):
     adapter = orientation_prompt | model.with_structured_output(parser)
     return adapter
 
+def index_extractor(model, parser=AdaptIndexParser):
+    prompt_template = PromptTemplate(
+        input_variables=["observations", "atomic_numbers"],
+        template=(
+            "You are an expert in catalyst and surface chemistry. Based on the given description of the adsorption configuration: \n"
+            "Observations: {observations}\n"
+            "Atomic numbers of atoms in the adsorbate: {atomic_numbers}\n"
+            "Your task is to derive the indices of the binding atoms in the adsorbate. "
+            "Provide the answers for the following questions (only answers, do not include the questions in the output):\n"
+            "1. What are the atom indices of the adsorbate that bind to the site? (Answer: list of indices)\n"
+            "Please stick to the provided answer form and keep it concise.\n"
+            "Note: The indices should be 0-based."
+        )
+    )
+    adapter = prompt_template | (model).with_structured_output(parser)
+    return adapter
 
-def derive_input_prompt(system_id, metadata_path):
-    sid_to_details = pd.read_pickle(metadata_path)
-    miller = sid_to_details[system_id][1]
-    ads = sid_to_details[system_id][4].replace("*", "")  
-    cat = sid_to_details[system_id][5]
-    prompt = f"The adsorbate is {ads} and the catalyst surface is {cat} {miller}."
-    return prompt
 
 def run_adsorb_aigent(system_id,
                   mode,
@@ -275,8 +293,33 @@ def run_adsorb_aigent(system_id,
     print("Loading adslabs...")
     ## when loading the adslab, the solution_result should be used!
     ## this part should be updated!!
-    adslabs, info = load_adslabs(system_id, mode, num_site, random_ratio, config_result, metadata_path, bulk_db_path, ads_db_path)
+    # adslabs, info = load_adslabs(system_id, mode, num_site, random_ratio, config_result, metadata_path, bulk_db_path, ads_db_path)
+    info = load_info_from_metadata(system_id, metadata_path)
+    mpid, miller, shift, top, ads, cat = info
+    site_type = config_result['site_type']
+    site_atoms = config_result['site_atoms']
+    # breakpoint()
     
+    bulk = Bulk(bulk_src_id_from_db=mpid, bulk_db_path=bulk_db_path)
+    slabs = Slab.from_bulk_get_specific_millers(bulk=bulk, specific_millers=miller)
+    for s in slabs:
+        if np.isclose(s.shift, shift, atol=0.01) and s.top == top:
+            slab = s
+            break
+    adsorbate = Adsorbate(adsorbate_smiles_from_db=ads, adsorbate_db_path=ads_db_path)
+    
+    if mode == "llm-guided":
+        index_adapter = index_extractor(model=llm_model)
+        index_result = index_adapter.invoke({
+            "observations": solution_result.text,
+            "atomic_numbers": adsorbate.atoms.numbers(),
+        })
+        adsorbate.binding_indices = np.array(index_result.solution)
+
+
+    adslabs_ = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
+    adslabs = [*adslabs_.atoms_list]
+
     # adslabs = adslabs[:3] # need to update!!!!!
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
@@ -366,7 +409,7 @@ def run_adsorb_aigent(system_id,
                 site_critic_valid = True
                 orientation_critic_valid = True
 
-        config_result = {'site_type': review_result.adsorption_site_type,
+        review_config_result = {'site_type': review_result.adsorption_site_type,
                         'site_atoms': review_result.binding_atoms_on_surface,
                         'num_site_atoms': review_result.number_of_binding_atoms,
                         'ads_bind_atoms': review_result.binding_atoms_in_adsorbate,
@@ -375,8 +418,26 @@ def run_adsorb_aigent(system_id,
                         }
         print("Loading adslabs... (2)")
         ## when loading the adslab, the solution_result should be used!
-        adslabs, info = load_adslabs(system_id, mode, num_site, random_ratio, config_result, metadata_path, bulk_db_path, ads_db_path)
+        #adslabs, info = load_adslabs(system_id, mode, num_site, random_ratio, config_result, metadata_path, bulk_db_path, ads_db_path)
         
+        info = load_info_from_metadata(system_id, metadata_path)
+        mpid, miller, shift, top, ads, cat = info
+        site_type = review_config_result['site_type']
+        site_atoms = review_config_result['site_atoms']
+        # breakpoint()
+
+        adsorbate = Adsorbate(adsorbate_smiles_from_db=ads, adsorbate_db_path=ads_db_path)
+        if mode == "llm-guided":
+            index_adapter = index_extractor(model=llm_model)
+            index_result = index_adapter.invoke({
+                "observations": solution_result.text,
+                "atomic_numbers": adsorbate.atoms.numbers(),
+            })
+            adsorbate.binding_indices = np.array(index_result.solution)
+
+        adslabs_ = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
+        adslabs = [*adslabs_.atoms_list]
+
         print("Relaxing adslabs... (2)")
         # relaxed_energies = []
         for j, adslab in enumerate(adslabs):
@@ -392,7 +453,9 @@ def run_adsorb_aigent(system_id,
 
     # Convert to dictionary
     result_dict = {'system': info}
-    result_dict.update(config_result)
+    result_dict['initial_solution'] = config_result
+    if reviwer_activate:
+        result_dict['review_solution'] = review_config_result
     # result_dict['full_solution'] = solution_result.reasoning
     result_dict['min_energy'] = min_energy
     result_dict['min_idx'] = min_idx
@@ -404,6 +467,45 @@ def run_adsorb_aigent(system_id,
     return result_dict
 
 
+def derive_input_prompt(system_id, metadata_path):
+    # breakpoint()
+    sid_to_details = pd.read_pickle(metadata_path)
+    miller = sid_to_details[system_id][1]
+    ads = sid_to_details[system_id][4].replace("*", "")  
+    cat = sid_to_details[system_id][5]
+    prompt = f"The adsorbate is {ads} and the catalyst surface is {cat} {miller}."
+    return prompt
+
+def load_info_from_metadata(system_id, metadata_path):
+    '''
+    metadata: sid_to_details dictionary
+
+    need to update the function to return AdsorbateSlabConfig object
+    '''
+    # breakpoint()
+    metadata = pd.read_pickle(metadata_path)
+    mpid = metadata[system_id][0]
+    miller = metadata[system_id][1]
+    shift = metadata[system_id][2]
+    top = metadata[system_id][3]
+    ads = metadata[system_id][4] #.replace("*", "")  
+    cat = metadata[system_id][5]
+    return mpid, miller, shift, top, ads, cat
+
+    # site_type = config_result['site_type']
+    # site_atoms = config_result['site_atoms']
+    # # breakpoint()
+    
+    # bulk = Bulk(bulk_src_id_from_db=mpid, bulk_db_path=bulk_db_path)
+    # slabs = Slab.from_bulk_get_specific_millers(bulk=bulk, specific_millers=miller)
+    # for s in slabs:
+    #     if np.isclose(s.shift, shift, atol=0.01) and s.top == top:
+    #         slab = s
+    #         break
+    # adsorbate = Adsorbate(adsorbate_smiles_from_db=ads, adsorbate_db_path=ads_db_path)
+    # adslabs = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
+    # ase_atom_list = [*adslabs.atoms_list]
+    # return ase_atom_list, info
 
 
 
@@ -440,6 +542,7 @@ def load_adslabs(system_id,
             slab = s
             break
     adsorbate = Adsorbate(adsorbate_smiles_from_db=ads, adsorbate_db_path=ads_db_path)
+
     adslabs = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
     ase_atom_list = [*adslabs.atoms_list]
     return ase_atom_list, info
@@ -528,6 +631,7 @@ if __name__ == '__main__':
     result = run_adsorb_aigent(system_id, 
                                mode,
                                num_site,
+                               random_ratio,
                                metadata_path, 
                                question_path, 
                                knowledge_path,
