@@ -312,7 +312,7 @@ def run_adsorb_aigent(system_id,
         index_adapter = index_extractor(model=llm_model)
         index_result = index_adapter.invoke({
             "observations": solution_result.text,
-            "atomic_numbers": adsorbate.atoms.numbers(),
+            "atomic_numbers": adsorbate.atoms.numbers,
         })
         adsorbate.binding_indices = np.array(index_result.solution)
 
@@ -431,7 +431,7 @@ def run_adsorb_aigent(system_id,
             index_adapter = index_extractor(model=llm_model)
             index_result = index_adapter.invoke({
                 "observations": solution_result.text,
-                "atomic_numbers": adsorbate.atoms.numbers(),
+                "atomic_numbers": adsorbate.atoms.numbers,
             })
             adsorbate.binding_indices = np.array(index_result.solution)
 
@@ -623,7 +623,11 @@ if __name__ == '__main__':
     bulk_db_path = paths['bulk_db_path']  #"/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/bulks.pkl"
     ads_db_path = paths['ads_db_path'] #"/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/adsorbates.pkl"
     save_dir = paths['save_dir']  #f"/home/hoon/llm-agent/results/{system_id}/"
-
+    if mode == "llm-guided":
+        tag = "llm"
+    elif mode == "llm-guided_site_heuristic_placement": 
+        tag = "llm_heuristic"
+    save_dir = os.path.join(save_dir, system_id+"_"+tag)
     # define LLM model
     llm_model = ChatOpenAI(model = gpt_version)
 
