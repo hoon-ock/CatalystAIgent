@@ -10,7 +10,7 @@ import time
 from fairchem.core.models.model_registry import model_name_to_local_file
 from fairchem.core.common.relaxation.ase_utils import OCPCalculator
 from ase.optimize import BFGS
-from ase.io import read 
+from ase.io import read, write, Trajectory
 from tools import SiteAnalyzer
 
 class AdaptReasoningParser(BaseModel):
@@ -332,6 +332,8 @@ def run_adsorb_aigent(system_id,
     relaxed_energies = []
     for i, adslab in enumerate(adslabs):
         save_path = os.path.join(traj_dir, f"config_{i}.traj")
+        # traj = Trajectory(save_path, 'w')
+        # traj.write(adslab)
         # breakpoint()
         adslab = relax_adslab(adslab, gnn_model, save_path)
         relaxed_energies.append(adslab.get_potential_energy())
@@ -442,6 +444,8 @@ def run_adsorb_aigent(system_id,
         # relaxed_energies = []
         for j, adslab in enumerate(adslabs):
             save_path = os.path.join(traj_dir, f"config_{j+i+1}.traj")
+            # traj = Trajectory(save_path, 'w')
+            # traj.write(adslab)
             # breakpoint()
             adslab = relax_adslab(adslab, gnn_model, save_path)
             relaxed_energies.append(adslab.get_potential_energy())
@@ -549,11 +553,22 @@ def load_adslabs(system_id,
 
 def relax_adslab(adslab, model_name, save_path):
     # relax the adsorbate slab
+    # traj = Trajectory(save_path, 'w')
+    # traj.write(adslab)
+    # with Trajectory(save_path, 'w') as traj:
+    #     traj.write(adslab)  # Save the initial structure
     checkpoint_path = model_name_to_local_file(model_name, local_cache='/tmp/fairchem_checkpoints/')
     calc = OCPCalculator(checkpoint_path=checkpoint_path, cpu=False)
     adslab.calc = calc
     opt = BFGS(adslab, trajectory=save_path)
     opt.run(fmax=0.05, steps=100)
+    # traj = Trajectory(save_path, 'a')  # Re-open in append mode
+    # traj.write(adslab)
+    # with Trajectory(save_path, 'a') as traj:
+    #     traj.write(adslab)  # Save the initial structure
+    # breakpoint()
+    # traj.close()
+    
     return adslab
 
 def load_text_file(file_path):
