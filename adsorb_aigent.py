@@ -5,13 +5,14 @@ from pydantic import BaseModel
 from langchain_core.pydantic_v1 import BaseModel, Field
 from typing import List, Optional
 from fairchem.data.oc.core import Adsorbate, Bulk, Slab, AdsorbateSlabConfig
-
+import numpy as np
 import time
 from fairchem.core.models.model_registry import model_name_to_local_file
 from fairchem.core.common.relaxation.ase_utils import OCPCalculator
 from ase.optimize import BFGS
 from ase.io import read, write, Trajectory
 from tools import SiteAnalyzer
+from utils import *
 
 class AdaptReasoningParser(BaseModel):
     """Information gathering plan"""
@@ -214,7 +215,7 @@ def run_adsorb_aigent(system_id,
                   gnn_model,
                   save_dir,
                   critic_activate=True,
-                  reviwer_activate=True):
+                  reviewer_activate=True):
     # Derive the initial input prompt from system_id
     observations = derive_input_prompt(system_id, metadata_path)
     reasoning_questions=load_text_file(question_path)
@@ -347,7 +348,7 @@ def run_adsorb_aigent(system_id,
     # step 3: place the adsorbate on the surface based on the updated configuration
     # step 4: run the relaxations again
     # step 5: find the minimum energy configuration again
-    if reviwer_activate:
+    if reviewer_activate:
         site_critic_valid = False
         orientation_critic_valid = False
         critic_loop_count2 = 0
@@ -458,43 +459,34 @@ def run_adsorb_aigent(system_id,
     # Convert to dictionary
     result_dict = {'system': info}
     result_dict['initial_solution'] = config_result
-    if reviwer_activate:
+    if reviewer_activate:
         result_dict['review_solution'] = review_config_result
     # result_dict['full_solution'] = solution_result.reasoning
     result_dict['min_energy'] = min_energy
     result_dict['min_idx'] = min_idx
-    result_dict['critic_loop_count'] = [critic_loop_count1, critic_loop_count2] if reviwer_activate else critic_loop_count1
-    result_dict['config_no_count'] = [i+1, j+1] if reviwer_activate else i
+    result_dict['critic_loop_count'] = [critic_loop_count1, critic_loop_count2] if reviewer_activate else critic_loop_count1
+    result_dict['config_no_count'] = [i+1, j+1] if reviewer_activate else i
 
     # Return the result as a dictionary with an ID (replace 'some_id' with actual identifier logic if needed)
     # result = {system_id: result_dict}
     return result_dict
 
 
-def derive_input_prompt(system_id, metadata_path):
-    # breakpoint()
-    sid_to_details = pd.read_pickle(metadata_path)
-    miller = sid_to_details[system_id][1]
-    ads = sid_to_details[system_id][4].replace("*", "")  
-    cat = sid_to_details[system_id][5]
-    prompt = f"The adsorbate is {ads} and the catalyst surface is {cat} {miller}."
-    return prompt
+# def load_info_from_metadata(system_id, metadata_path):
+#     '''
+#     metadata: sid_to_details dictionary
 
-def load_info_from_metadata(system_id, metadata_path):
-    '''
-    metadata: sid_to_details dictionary
-
-    need to update the function to return AdsorbateSlabConfig object
-    '''
-    # breakpoint()
-    metadata = pd.read_pickle(metadata_path)
-    mpid = metadata[system_id][0]
-    miller = metadata[system_id][1]
-    shift = metadata[system_id][2]
-    top = metadata[system_id][3]
-    ads = metadata[system_id][4] #.replace("*", "")  
-    cat = metadata[system_id][5]
-    return mpid, miller, shift, top, ads, cat
+#     need to update the function to return AdsorbateSlabConfig object
+#     '''
+#     # breakpoint()
+#     metadata = pd.read_pickle(metadata_path)
+#     mpid = metadata[system_id][0]
+#     miller = metadata[system_id][1]
+#     shift = metadata[system_id][2]
+#     top = metadata[system_id][3]
+#     ads = metadata[system_id][4] #.replace("*", "")  
+#     cat = metadata[system_id][5]
+#     return mpid, miller, shift, top, ads, cat
 
     # site_type = config_result['site_type']
     # site_atoms = config_result['site_atoms']
@@ -513,74 +505,53 @@ def load_info_from_metadata(system_id, metadata_path):
 
 
 
-def load_adslabs(system_id,
-                 mode, 
-                 num_site,
-                 random_ratio, 
-                 config_result, 
-                 metadata_path, 
-                 bulk_db_path, 
-                 ads_db_path):
-    '''
-    metadata: sid_to_details dictionary
+# def load_adslabs(system_id,
+#                  mode, 
+#                  num_site,
+#                  random_ratio, 
+#                  config_result, 
+#                  metadata_path, 
+#                  bulk_db_path, 
+#                  ads_db_path):
+#     '''
+#     metadata: sid_to_details dictionary
 
-    need to update the function to return AdsorbateSlabConfig object
-    '''
-    # breakpoint()
-    metadata = pd.read_pickle(metadata_path)
-    mpid = metadata[system_id][0]
-    miller = metadata[system_id][1]
-    shift = metadata[system_id][2]
-    top = metadata[system_id][3]
-    ads = metadata[system_id][4] #.replace("*", "")  
-    cat = metadata[system_id][5]
-    info = [mpid, miller, shift, top, ads, cat]
-    site_type = config_result['site_type']
-    site_atoms = config_result['site_atoms']
-    # breakpoint()
+#     need to update the function to return AdsorbateSlabConfig object
+#     '''
+#     # breakpoint()
+#     metadata = pd.read_pickle(metadata_path)
+#     mpid = metadata[system_id][0]
+#     miller = metadata[system_id][1]
+#     shift = metadata[system_id][2]
+#     top = metadata[system_id][3]
+#     ads = metadata[system_id][4] #.replace("*", "")  
+#     cat = metadata[system_id][5]
+#     info = [mpid, miller, shift, top, ads, cat]
+#     site_type = config_result['site_type']
+#     site_atoms = config_result['site_atoms']
+#     # breakpoint()
     
-    bulk = Bulk(bulk_src_id_from_db=mpid, bulk_db_path=bulk_db_path)
-    slabs = Slab.from_bulk_get_specific_millers(bulk=bulk, specific_millers=miller)
-    for s in slabs:
-        if np.isclose(s.shift, shift, atol=0.01) and s.top == top:
-            slab = s
-            break
-    adsorbate = Adsorbate(adsorbate_smiles_from_db=ads, adsorbate_db_path=ads_db_path)
+#     bulk = Bulk(bulk_src_id_from_db=mpid, bulk_db_path=bulk_db_path)
+#     slabs = Slab.from_bulk_get_specific_millers(bulk=bulk, specific_millers=miller)
+#     for s in slabs:
+#         if np.isclose(s.shift, shift, atol=0.01) and s.top == top:
+#             slab = s
+#             break
+#     adsorbate = Adsorbate(adsorbate_smiles_from_db=ads, adsorbate_db_path=ads_db_path)
 
-    adslabs = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
-    ase_atom_list = [*adslabs.atoms_list]
-    return ase_atom_list, info
+#     adslabs = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
+#     ase_atom_list = [*adslabs.atoms_list]
+#     return ase_atom_list, info
 
 def relax_adslab(adslab, model_name, save_path):
-    # relax the adsorbate slab
-    # traj = Trajectory(save_path, 'w')
-    # traj.write(adslab)
-    # with Trajectory(save_path, 'w') as traj:
-    #     traj.write(adslab)  # Save the initial structure
     checkpoint_path = model_name_to_local_file(model_name, local_cache='/tmp/fairchem_checkpoints/')
     calc = OCPCalculator(checkpoint_path=checkpoint_path, cpu=False)
     adslab.calc = calc
     opt = BFGS(adslab, trajectory=save_path)
-    opt.run(fmax=0.05, steps=100)
-    # traj = Trajectory(save_path, 'a')  # Re-open in append mode
-    # traj.write(adslab)
-    # with Trajectory(save_path, 'a') as traj:
-    #     traj.write(adslab)  # Save the initial structure
-    # breakpoint()
-    # traj.close()
-    
+    opt.run(fmax=0.05, steps=100)    
     return adslab
 
-def load_text_file(file_path):
-    """Loads a text file and returns its content."""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            content = file.read()
-        return content
-    except FileNotFoundError:
-        return "File not found."
-    except Exception as e:
-        return f"An error occurred: {e}"
+
 
 # def convert_dict(input_solution, keys=['site_type', 'site_atoms', 'ads_bind_atoms', 'orient', 'others']):
 #     # Clean up the list (remove extra spaces)
@@ -600,72 +571,134 @@ def load_text_file(file_path):
 
 #     return result_dict
 
+def run_adsorb_aigent_for_systems(sid_list, config, llm_model, save_dir):
+    """Iterate through system IDs, running adsorb agent for each one."""
+    for sid in sid_list:
+        result = run_adsorb_aigent(
+            system_id=sid,
+            mode=config['agent_settings']['mode'],
+            num_site=config['system_info']['num_site'],
+            random_ratio=config['system_info']['random_ratio'],
+            metadata_path=config['paths']['metadata_path'],
+            question_path=config['paths']['question_path'],
+            knowledge_path=config['paths']['knowledge_path'],
+            bulk_db_path=config['paths']['bulk_db_path'],
+            ads_db_path=config['paths']['ads_db_path'],
+            llm_model=llm_model,
+            gnn_model=config['agent_settings']['gnn_model'],
+            save_dir=save_dir,
+            critic_activate=config['agent_settings']['critic_activate'],
+            reviewer_activate=config['agent_settings']['reviewer_activate']
+        )
+        save_result(result, save_dir)
+
+
 if __name__ == '__main__':
-    import pandas as pd
-    import numpy as np  
-    import pickle
     from secret_keys import openapi_key
+    from langchain_openai import ChatOpenAI
     import os
     os.environ["OPENAI_API_KEY"] = openapi_key
-    from langchain_openai import ChatOpenAI
-    import yaml
-    import shutil
 
-    # Load YAML file
-    with open('config.yaml', 'r') as file:
-        config = yaml.safe_load(file)
+    # Load configuration
+    config = load_config('config.yaml')
 
-    # Access the variables
+    # Extract system information and agent settings
     system_info = config['system_info']
     agent_settings = config['agent_settings']
     paths = config['paths']
+
+    # Define system_id and initialize LLM model
+    system_id = system_info['system_id']
+    llm_model = ChatOpenAI(model=agent_settings['gpt_version'])
+
+    # Setup save directory
+    save_dir = setup_paths(system_id, agent_settings['mode'], paths)
+
+    # Load metadata and system ID list
+    sid_list, metadata = load_metadata(paths['metadata_path'], system_id)
+    print('='*20)
+    print('Number of systems:', len(sid_list))
+
+    # Process each system using the adsorb agent and save the results
+    run_adsorb_aigent_for_systems(sid_list, config, llm_model, save_dir)
+
+# if __name__ == '__main__':
+#     import pandas as pd
+#     import numpy as np  
+#     import pickle
+#     from secret_keys import openapi_key
+#     import os
+#     os.environ["OPENAI_API_KEY"] = openapi_key
+#     from langchain_openai import ChatOpenAI
+#     import yaml
+#     import shutil
+
+#     # Load YAML file
+#     with open('config.yaml', 'r') as file:
+#         config = yaml.safe_load(file)
+
+#     # Access the variables
+#     system_info = config['system_info']
+#     agent_settings = config['agent_settings']
+#     paths = config['paths']
     
-    # define system_id
-    system_id = system_info['system_id'] #"71_2537_62"
-    num_site = system_info['num_site']
-    random_ratio = system_info['random_ratio']
+#     # define system_id
+#     system_id = system_info['system_id'] #"71_2537_62"
+#     num_site = system_info['num_site']
+#     random_ratio = system_info['random_ratio']
 
-    # define settings
-    gpt_version = agent_settings['gpt_version']
-    gnn_model = agent_settings['gnn_model']
-    mode = agent_settings['mode'] #"llm-guided_site_heuristic_placement" # "llm-guided"
-    critic_activate = agent_settings['critic_activate'] #True
-    reviwer_activate = agent_settings['reviewer_activate'] #True
-    # define paths
-    question_path = paths['question_path'] #"/home/hoon/llm-agent/adsorb/reasoning.txt"
-    knowledge_path = paths['knowledge_path'] #"/home/hoon/llm-agent/adsorb/knowledge.txt"
-    metadata_path = paths['metadata_path'] #"/home/hoon/llm-agent/adsorb/data/processed/updated_sid_to_details.pkl"
-    bulk_db_path = paths['bulk_db_path']  #"/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/bulks.pkl"
-    ads_db_path = paths['ads_db_path'] #"/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/adsorbates.pkl"
-    save_dir = paths['save_dir']  #f"/home/hoon/llm-agent/results/{system_id}/"
-    if mode == "llm-guided":
-        tag = "llm"
-    elif mode == "llm-guided_site_heuristic_placement": 
-        tag = "llm_heuristic"
-    save_dir = os.path.join(save_dir, system_id+"_"+tag)
-    # define LLM model
-    llm_model = ChatOpenAI(model = gpt_version)
+#     # define settings
+#     gpt_version = agent_settings['gpt_version']
+#     gnn_model = agent_settings['gnn_model']
+#     mode = agent_settings['mode'] #"llm-guided_site_heuristic_placement" # "llm-guided"
+#     critic_activate = agent_settings['critic_activate'] #True
+#     reviwer_activate = agent_settings['reviewer_activate'] #True
+#     # define paths
+#     question_path = paths['question_path'] #"/home/hoon/llm-agent/adsorb/reasoning.txt"
+#     knowledge_path = paths['knowledge_path'] #"/home/hoon/llm-agent/adsorb/knowledge.txt"
+#     metadata_path = paths['metadata_path'] #"/home/hoon/llm-agent/adsorb/data/processed/updated_sid_to_details.pkl"
+#     bulk_db_path = paths['bulk_db_path']  #"/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/bulks.pkl"
+#     ads_db_path = paths['ads_db_path'] #"/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/adsorbates.pkl"
+#     save_dir = paths['save_dir']  #f"/home/hoon/llm-agent/results/{system_id}/"
+#     if mode == "llm-guided":
+#         tag = "llm"
+#     elif mode == "llm-guided_site_heuristic_placement": 
+#         tag = "llm_heuristic"
+#     save_dir = os.path.join(save_dir, system_id+"_"+tag)
 
-    # process reasoning and solution
-    result = run_adsorb_aigent(system_id, 
-                               mode,
-                               num_site,
-                               random_ratio,
-                               metadata_path, 
-                               question_path, 
-                               knowledge_path,
-                               bulk_db_path,
-                               ads_db_path,
-                               llm_model,
-                               gnn_model,
-                               save_dir,
-                               critic_activate,
-                               reviwer_activate)
-    print(result)
 
-    # save the result
-    with open(os.path.join(save_dir, 'result.pkl'), 'wb') as f:
-        pickle.dump(result, f)
-    # copy yaml file to save_dir
-    
-    shutil.copy('config.yaml', save_dir)
+#     # define LLM model
+#     llm_model = ChatOpenAI(model = gpt_version)
+
+#     if system_id == "all":
+#         metadata = pd.read_pickle(metadata_path)
+#         sid_list = list(metadata.keys())
+#         print('Number of systems:', len(sid_list))
+#         breakpoint()
+#     else:
+#         sid_list = [system_id]
+
+#     # process reasoning and solution
+#     for sid in sid_list:
+#         result = run_adsorb_aigent(sid, 
+#                                    mode,
+#                                    num_site,
+#                                    random_ratio,
+#                                    metadata_path, 
+#                                    question_path, 
+#                                    knowledge_path,
+#                                    bulk_db_path,
+#                                    ads_db_path,
+#                                    llm_model,
+#                                    gnn_model,
+#                                    save_dir,
+#                                    critic_activate,
+#                                    reviwer_activate)
+#     #print(result)
+
+#         # save the result
+#         with open(os.path.join(save_dir, 'result.pkl'), 'wb') as f:
+#             pickle.dump(result, f)
+#         # copy yaml file to save_dir
+
+#         shutil.copy('config.yaml', save_dir)
