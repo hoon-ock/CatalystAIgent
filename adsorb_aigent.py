@@ -522,7 +522,7 @@ def run_adsorb_aigent(config):
 
 if __name__ == '__main__':
     # Load configuration
-    config = load_config('config.yaml')
+    config = load_config('config/adsorb_aigent.yaml')
     result = run_adsorb_aigent(config)
     # Extract system information and agent settings
     # system_info = config['system_info']

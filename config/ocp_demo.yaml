@@ -1,0 +1,12 @@
+system_info:
+  system_id: #"71_2537_62" #"16_7283_37" #"71_2537_62"
+  bulk_symbol: "CuPd3"
+  bulk_id: "mp-1184119"
+  miller: "(1,1,1)"
+  shift: 0.063
+  top: None
+  ads_smiles: "*N*NH"
+
+paths:
+  metadata_path: "/home/hoon/llm-agent/adsorb/data/processed/updated_sid_to_details.pkl"
+  save_dir: "/home/hoon/llm-agent/results_ocpdemo/" #71_2537_62/"
