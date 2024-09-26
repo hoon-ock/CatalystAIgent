@@ -1,14 +1,20 @@
 system_info:
-  system_id: "71_2537_62"
-  num_site: 8
+  system_id: #"71_2537_62" #"16_7283_37" #"71_2537_62"
+  bulk_symbol: "CuPd3"
+  bulk_id: "mp-1184119"
+  miller: "(1,1,1)"
+  shift: 0.063
+  top: None
+  ads_smiles: "*N*NH"
+  num_site: 10
   random_ratio: 0.2
 
 agent_settings:
   gpt_version: "gpt-4o"
   gnn_model: "EquiformerV2-31M-S2EF-OC20-All+MD"
-  mode: "llm-guided_site_heuristic_placement"
-  critic_activate: true
-  reviewer_activate: true
+  mode: "llm-guided" #"llm-guided" #"llm-guided_site_heuristic_placement"
+  critic_activate: false #true
+  reviewer_activate: false #true
 
 paths:
   question_path: "/home/hoon/llm-agent/reasoning/reasoning.txt"
@@ -16,4 +22,4 @@ paths:
   metadata_path: "/home/hoon/llm-agent/adsorb/data/processed/updated_sid_to_details.pkl"
   bulk_db_path: "/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/bulks.pkl"
   ads_db_path: "/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/adsorbates.pkl"
-  save_dir: "/home/hoon/llm-agent/results/71_2537_62/"
+  save_dir: "/home/hoon/llm-agent/results/" #71_2537_62/"

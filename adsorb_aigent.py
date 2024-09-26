@@ -1,18 +1,17 @@
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
-
 from pydantic import BaseModel
 from langchain_core.pydantic_v1 import BaseModel, Field
 from typing import List, Optional
 from fairchem.data.oc.core import Adsorbate, Bulk, Slab, AdsorbateSlabConfig
 import numpy as np
-import time
-from fairchem.core.models.model_registry import model_name_to_local_file
-from fairchem.core.common.relaxation.ase_utils import OCPCalculator
-from ase.optimize import BFGS
-from ase.io import read, write, Trajectory
+import ast
+from ase.io import read
 from tools import SiteAnalyzer
 from utils import *
+from secret_keys import openapi_key
+import os
+os.environ["OPENAI_API_KEY"] = openapi_key
 
 class AdaptReasoningParser(BaseModel):
     """Information gathering plan"""
@@ -202,25 +201,29 @@ def index_extractor(model, parser=AdaptIndexParser):
     return adapter
 
 
-def run_adsorb_aigent(system_id,
-                  mode,
-                  num_site,
-                  random_ratio, 
-                  metadata_path, 
-                  question_path,
-                  knowledge_path,
-                  bulk_db_path,
-                  ads_db_path, 
-                  llm_model,
-                  gnn_model,
-                  save_dir,
-                  critic_activate=True,
-                  reviewer_activate=True):
+def run_adsorb_aigent(config):
+    system_info = config['system_info']
+    agent_settings = config['agent_settings']
+    paths = config['paths']
+    metadata_path = paths['metadata_path']
+    question_path = paths['question_path']
+    knowledge_path = paths['knowledge_path']
+    bulk_db_path = paths['bulk_db_path']
+    ads_db_path = paths['ads_db_path']
+    llm_model = ChatOpenAI(model=agent_settings['gpt_version'])
+    gnn_model = agent_settings['gnn_model']
+    critic_activate = agent_settings['critic_activate']
+    reviewer_activate = agent_settings['reviewer_activate']
+    mode = agent_settings['mode']
+
     # Derive the initial input prompt from system_id
-    observations = derive_input_prompt(system_id, metadata_path)
+    observations = derive_input_prompt(system_info, metadata_path)
+    print("Input Prompt:", observations)
     reasoning_questions=load_text_file(question_path)
     knowledge_statements=load_text_file(knowledge_path)
-
+    num_site = system_info['num_site']
+    random_ratio = system_info['random_ratio']
+    save_dir = setup_paths(system_info, agent_settings['mode'], paths) 
     # Reasoning step
     print("Reasoning step...")
     reasoning_adapter = info_reasoning_adapter(model=llm_model)
@@ -292,21 +295,34 @@ def run_adsorb_aigent(system_id,
 
     # evaluate the energy
     print("Loading adslabs...")
-    ## when loading the adslab, the solution_result should be used!
-    ## this part should be updated!!
-    # adslabs, info = load_adslabs(system_id, mode, num_site, random_ratio, config_result, metadata_path, bulk_db_path, ads_db_path)
-    info = load_info_from_metadata(system_id, metadata_path)
-    mpid, miller, shift, top, ads, cat = info
+    if system_info.get("system_id", None) is not None:
+        system_id = system_info.get("system_id", None)
+        info = load_info_from_metadata(system_id, metadata_path)
+    else:
+        info = [
+        system_info.get("bulk_id"),
+        system_info.get("miller"),
+        system_info.get("shift"),
+        None,  # 'top' is not provided in the fallback
+        system_info.get("ads_smiles"),
+        system_info.get("bulk_symbol")
+    ]
+
+    bulk_id, miller, shift, top, ads, bulk_symbol = info
+    if not isinstance(miller, tuple):
+        miller = ast.literal_eval(miller)
+    # breakpoint()
     site_type = config_result['site_type']
     site_atoms = config_result['site_atoms']
-    # breakpoint()
+
     
-    bulk = Bulk(bulk_src_id_from_db=mpid, bulk_db_path=bulk_db_path)
+    bulk = Bulk(bulk_src_id_from_db=bulk_id, bulk_db_path=bulk_db_path)
     slabs = Slab.from_bulk_get_specific_millers(bulk=bulk, specific_millers=miller)
-    for s in slabs:
-        if np.isclose(s.shift, shift, atol=0.01) and s.top == top:
-            slab = s
-            break
+    for slab_candidate in slabs:
+        if np.isclose(slab_candidate.shift, shift, atol=0.01):
+            if top is None or slab_candidate.top == top:
+                slab = slab_candidate
+                break
     adsorbate = Adsorbate(adsorbate_smiles_from_db=ads, adsorbate_db_path=ads_db_path)
     
     if mode == "llm-guided":
@@ -317,11 +333,11 @@ def run_adsorb_aigent(system_id,
         })
         adsorbate.binding_indices = np.array(index_result.solution)
 
-
+    # breakpoint()
     adslabs_ = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
     adslabs = [*adslabs_.atoms_list]
+    # breakpoint()
 
-    # adslabs = adslabs[:3] # need to update!!!!!
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     
@@ -333,9 +349,6 @@ def run_adsorb_aigent(system_id,
     relaxed_energies = []
     for i, adslab in enumerate(adslabs):
         save_path = os.path.join(traj_dir, f"config_{i}.traj")
-        # traj = Trajectory(save_path, 'w')
-        # traj.write(adslab)
-        # breakpoint()
         adslab = relax_adslab(adslab, gnn_model, save_path)
         relaxed_energies.append(adslab.get_potential_energy())
 
@@ -422,9 +435,20 @@ def run_adsorb_aigent(system_id,
         print("Loading adslabs... (2)")
         ## when loading the adslab, the solution_result should be used!
         #adslabs, info = load_adslabs(system_id, mode, num_site, random_ratio, config_result, metadata_path, bulk_db_path, ads_db_path)
+        # if system_info.get("system_id", None) is not None:
+        #     system_id = system_info.get("system_id", None)
+        #     info = load_info_from_metadata(system_id, metadata_path)
+        # else:
+        #     info = [
+        #     system_info.get("bulk_id"),
+        #     system_info.get("miller"),
+        #     system_info.get("shift"),
+        #     None,  # 'top' is not provided in the fallback
+        #     system_info.get("ads_smiles"),
+        #     system_info.get("bulk_symbol")
+        # ]
         
-        info = load_info_from_metadata(system_id, metadata_path)
-        mpid, miller, shift, top, ads, cat = info
+        # bulk_id, miller, shift, top, ads, bulk_symbol = info
         site_type = review_config_result['site_type']
         site_atoms = review_config_result['site_atoms']
         # breakpoint()
@@ -445,9 +469,6 @@ def run_adsorb_aigent(system_id,
         # relaxed_energies = []
         for j, adslab in enumerate(adslabs):
             save_path = os.path.join(traj_dir, f"config_{j+i+1}.traj")
-            # traj = Trajectory(save_path, 'w')
-            # traj.write(adslab)
-            # breakpoint()
             adslab = relax_adslab(adslab, gnn_model, save_path)
             relaxed_energies.append(adslab.get_potential_energy())
 
@@ -469,158 +490,75 @@ def run_adsorb_aigent(system_id,
 
     # Return the result as a dictionary with an ID (replace 'some_id' with actual identifier logic if needed)
     # result = {system_id: result_dict}
+    print("Result:", result_dict)
+    save_result(result_dict, save_dir)
     return result_dict
 
 
-# def load_info_from_metadata(system_id, metadata_path):
-#     '''
-#     metadata: sid_to_details dictionary
-
-#     need to update the function to return AdsorbateSlabConfig object
-#     '''
-#     # breakpoint()
-#     metadata = pd.read_pickle(metadata_path)
-#     mpid = metadata[system_id][0]
-#     miller = metadata[system_id][1]
-#     shift = metadata[system_id][2]
-#     top = metadata[system_id][3]
-#     ads = metadata[system_id][4] #.replace("*", "")  
-#     cat = metadata[system_id][5]
-#     return mpid, miller, shift, top, ads, cat
-
-    # site_type = config_result['site_type']
-    # site_atoms = config_result['site_atoms']
-    # # breakpoint()
-    
-    # bulk = Bulk(bulk_src_id_from_db=mpid, bulk_db_path=bulk_db_path)
-    # slabs = Slab.from_bulk_get_specific_millers(bulk=bulk, specific_millers=miller)
-    # for s in slabs:
-    #     if np.isclose(s.shift, shift, atol=0.01) and s.top == top:
-    #         slab = s
-    #         break
-    # adsorbate = Adsorbate(adsorbate_smiles_from_db=ads, adsorbate_db_path=ads_db_path)
-    # adslabs = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
-    # ase_atom_list = [*adslabs.atoms_list]
-    # return ase_atom_list, info
 
 
 
-# def load_adslabs(system_id,
-#                  mode, 
-#                  num_site,
-#                  random_ratio, 
-#                  config_result, 
-#                  metadata_path, 
-#                  bulk_db_path, 
-#                  ads_db_path):
-#     '''
-#     metadata: sid_to_details dictionary
-
-#     need to update the function to return AdsorbateSlabConfig object
-#     '''
-#     # breakpoint()
-#     metadata = pd.read_pickle(metadata_path)
-#     mpid = metadata[system_id][0]
-#     miller = metadata[system_id][1]
-#     shift = metadata[system_id][2]
-#     top = metadata[system_id][3]
-#     ads = metadata[system_id][4] #.replace("*", "")  
-#     cat = metadata[system_id][5]
-#     info = [mpid, miller, shift, top, ads, cat]
-#     site_type = config_result['site_type']
-#     site_atoms = config_result['site_atoms']
-#     # breakpoint()
-    
-#     bulk = Bulk(bulk_src_id_from_db=mpid, bulk_db_path=bulk_db_path)
-#     slabs = Slab.from_bulk_get_specific_millers(bulk=bulk, specific_millers=miller)
-#     for s in slabs:
-#         if np.isclose(s.shift, shift, atol=0.01) and s.top == top:
-#             slab = s
-#             break
-#     adsorbate = Adsorbate(adsorbate_smiles_from_db=ads, adsorbate_db_path=ads_db_path)
-
-#     adslabs = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
-#     ase_atom_list = [*adslabs.atoms_list]
-#     return ase_atom_list, info
-
-def relax_adslab(adslab, model_name, save_path):
-    checkpoint_path = model_name_to_local_file(model_name, local_cache='/tmp/fairchem_checkpoints/')
-    calc = OCPCalculator(checkpoint_path=checkpoint_path, cpu=False)
-    adslab.calc = calc
-    opt = BFGS(adslab, trajectory=save_path)
-    opt.run(fmax=0.05, steps=100)    
-    return adslab
-
-
-
-# def convert_dict(input_solution, keys=['site_type', 'site_atoms', 'ads_bind_atoms', 'orient', 'others']):
-#     # Clean up the list (remove extra spaces)
-#     cleaned_list = [item.strip() for item in input_solution]
-
-#     # Check if the input_solution has less than 5 entries and only use relevant keys
-#     if len(cleaned_list) < len(keys):
-#         # Use only the first four keys
-#         keys = keys[:len(cleaned_list)]
-
-#     # Create the dictionary by zipping keys and cleaned list
-#     result_dict = dict(zip(keys, cleaned_list))
-
-#     # Convert 'site_type' and 'orient' values to lowercase
-#     result_dict['site_type'] = result_dict['site_type'].lower()
-#     result_dict['orient'] = result_dict['orient'].lower()
-
-#     return result_dict
-
-def run_adsorb_aigent_for_systems(sid_list, config, llm_model, save_dir):
-    """Iterate through system IDs, running adsorb agent for each one."""
-    for sid in sid_list:
-        result = run_adsorb_aigent(
-            system_id=sid,
-            mode=config['agent_settings']['mode'],
-            num_site=config['system_info']['num_site'],
-            random_ratio=config['system_info']['random_ratio'],
-            metadata_path=config['paths']['metadata_path'],
-            question_path=config['paths']['question_path'],
-            knowledge_path=config['paths']['knowledge_path'],
-            bulk_db_path=config['paths']['bulk_db_path'],
-            ads_db_path=config['paths']['ads_db_path'],
-            llm_model=llm_model,
-            gnn_model=config['agent_settings']['gnn_model'],
-            save_dir=save_dir,
-            critic_activate=config['agent_settings']['critic_activate'],
-            reviewer_activate=config['agent_settings']['reviewer_activate']
-        )
-        save_result(result, save_dir)
+# def run_adsorb_aigent_for_systems(sid_list, config, llm_model, save_dir):
+#     """Iterate through system IDs, running adsorb agent for each one."""
+#     for sid in sid_list:
+#         result = run_adsorb_aigent(
+#             system_id=sid,
+#             mode=config['agent_settings']['mode'],
+#             num_site=config['system_info']['num_site'],
+#             random_ratio=config['system_info']['random_ratio'],
+#             metadata_path=config['paths']['metadata_path'],
+#             question_path=config['paths']['question_path'],
+#             knowledge_path=config['paths']['knowledge_path'],
+#             bulk_db_path=config['paths']['bulk_db_path'],
+#             ads_db_path=config['paths']['ads_db_path'],
+#             llm_model=llm_model,
+#             gnn_model=config['agent_settings']['gnn_model'],
+#             save_dir=save_dir,
+#             critic_activate=config['agent_settings']['critic_activate'],
+#             reviewer_activate=config['agent_settings']['reviewer_activate']
+#         )
+#         save_result(result, save_dir)
 
 
 if __name__ == '__main__':
-    from secret_keys import openapi_key
-    from langchain_openai import ChatOpenAI
-    import os
-    os.environ["OPENAI_API_KEY"] = openapi_key
-
     # Load configuration
     config = load_config('config.yaml')
-
+    result = run_adsorb_aigent(config)
     # Extract system information and agent settings
-    system_info = config['system_info']
-    agent_settings = config['agent_settings']
-    paths = config['paths']
+    # system_info = config['system_info']
+    # agent_settings = config['agent_settings']
+    # paths = config['paths']
 
-    # Define system_id and initialize LLM model
-    system_id = system_info['system_id']
-    llm_model = ChatOpenAI(model=agent_settings['gpt_version'])
+    # # Initialize LLM model
+    # llm_model = ChatOpenAI(model=agent_settings['gpt_version'])
 
+    # system_id = system_info.get('system_id', None)
     # Setup save directory
-    save_dir = setup_paths(system_id, agent_settings['mode'], paths)
+    #save_dir = setup_paths(system_info, agent_settings['mode'], paths)
+
+    # Run the adsorb agent for a single system
+    
+        #     system_info=system_info,
+        #     mode=config['agent_settings']['mode'],
+        #     metadata_path=config['paths']['metadata_path'],
+        #     question_path=config['paths']['question_path'],
+        #     knowledge_path=config['paths']['knowledge_path'],
+        #     bulk_db_path=config['paths']['bulk_db_path'],
+        #     ads_db_path=config['paths']['ads_db_path'],
+        #     llm_model=llm_model,
+        #     gnn_model=config['agent_settings']['gnn_model'],
+        #     critic_activate=config['agent_settings']['critic_activate'],
+        #     reviewer_activate=config['agent_settings']['reviewer_activate']
+        # )
+    #save_result(result, save_dir)
 
     # Load metadata and system ID list
-    sid_list, metadata = load_metadata(paths['metadata_path'], system_id)
-    print('='*20)
-    print('Number of systems:', len(sid_list))
+    # sid_list, metadata = load_metadata(paths['metadata_path'], system_info)
+    # print('='*20)
+    # print('Number of systems:', len(sid_list))
 
     # Process each system using the adsorb agent and save the results
-    run_adsorb_aigent_for_systems(sid_list, config, llm_model, save_dir)
+    # run_adsorb_aigent_for_systems(sid_list, config, llm_model, save_dir)
 
 # if __name__ == '__main__':
 #     import pandas as pd
