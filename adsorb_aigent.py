@@ -222,6 +222,8 @@ def run_adsorb_aigent(config):
     reasoning_questions=load_text_file(question_path)
     knowledge_statements=load_text_file(knowledge_path)
     num_site = system_info['num_site']
+    if reviewer_activate:
+        num_site = int(num_site/2)
     random_ratio = system_info['random_ratio']
     save_dir = setup_paths(system_info, agent_settings['mode'], paths) 
     # Reasoning step

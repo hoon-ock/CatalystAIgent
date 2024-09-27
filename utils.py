@@ -22,8 +22,19 @@ def setup_paths(system_info, mode, paths):
         system_id = f"{system_info['ads_smiles']}_{system_info['bulk_symbol']}_{system_info['bulk_id']}_{str(system_info['miller'])}_{str(system_info['shift'])}"
     
     save_dir = paths['save_dir']
-    tag = "llm" if mode == "llm-guided" else "llm_heuristic"
-    return os.path.join(save_dir, f"{system_id}_{tag}")
+    # tag = "llm" if mode == "llm-guided" else "llm_heur"
+    save_path = os.path.join(save_dir, f"{system_id}")
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    else:
+        # make copy version
+        i = 1
+        while os.path.exists(f"{save_path}_{i}"):
+            i += 1
+        save_path = f"{save_path}_{i}"
+    
+    return save_path
+    #return os.path.join(save_dir, f"{system_id}")
 
 def load_metadata(metadata_path, system_id):
     """Load metadata or extract system ID list if applicable."""
@@ -34,17 +45,21 @@ def load_metadata(metadata_path, system_id):
 
 def save_result(result, save_dir):
     """Save the result as a pickle file and copy configuration for record."""
-    # result_path = os.path.join(save_dir, 'result.pkl')
-    # with open(result_path, 'wb') as f:
-    #     pickle.dump(result, f)
+    result_path = os.path.join(save_dir, 'result.pkl')
+    with open(result_path, 'wb') as f:
+        pickle.dump(result, f)
 
-    result_path = os.path.join(save_dir, 'result.json')
-    # Save result in JSON format
+    # Save it as text file
+    result_path = os.path.join(save_dir, 'result.txt')
     with open(result_path, 'w') as f:
-        json.dump(result, f)  # indent=4 for pretty printing
+        f.write(str(result))
+    # result_path = os.path.join(save_dir, 'result.json')
+    # # Save result in JSON format
+    # with open(result_path, 'w') as f:
+    #     json.dump(result, f)  # indent=4 for pretty printing
     
     # Copy config file for reproducibility
-    shutil.copy('config.yaml', save_dir)
+    shutil.copy('config/adsorb_aigent.yaml', save_dir)
 
 
 
