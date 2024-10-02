@@ -283,8 +283,6 @@ def run_adsorb_aigent(config):
             orientation_critic_valid = True
 
 
-    # config_result = convert_dict(solution_result.solution)
-    # keys=['site_type', 'site_atoms', 'ads_bind_atoms', 'orient', 'others']
     config_result = {'site_type': solution_result.adsorption_site_type,
                      'site_atoms': solution_result.binding_atoms_on_surface,
                      'num_site_atoms': solution_result.number_of_binding_atoms,
@@ -304,7 +302,7 @@ def run_adsorb_aigent(config):
         info = [
         system_info.get("bulk_id"),
         system_info.get("miller"),
-        system_info.get("shift"),
+        system_info.get("shift", None),
         None,  # 'top' is not provided in the fallback
         system_info.get("ads_smiles"),
         system_info.get("bulk_symbol")
@@ -454,7 +452,8 @@ def run_adsorb_aigent(config):
         site_type = review_config_result['site_type']
         site_atoms = review_config_result['site_atoms']
         # breakpoint()
-
+        # adsorbate line should be present in the code!!! 
+        # without this part, it's impossible to implement the initial placement properly!!
         adsorbate = Adsorbate(adsorbate_smiles_from_db=ads, adsorbate_db_path=ads_db_path)
         if mode == "llm-guided":
             index_adapter = index_extractor(model=llm_model)
