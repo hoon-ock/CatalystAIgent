@@ -4,9 +4,16 @@ import glob
 import os
 import pickle
 from tqdm import tqdm
+import argparse
+argparser = argparse.ArgumentParser()
+argparser.add_argument("--dir", type=str, default="results")
+args = argparser.parse_args()
+
 
 # List all directories in the results folder
-dir_list = glob.glob("results/*")
+dir_list = glob.glob(f"{args.dir}/*")
+# breakpoint()
+assert len(dir_list) > 0, f"No directories found in {args.dir}"
 
 for dir in dir_list:
     traj_dir = os.path.join(dir, "traj/")
@@ -20,7 +27,6 @@ for dir in dir_list:
     traj_files = glob.glob(os.path.join(traj_dir, "*.traj"))
 
     valid_energies = {}
-
     # Iterate over all traj files with a progress bar
     for traj_file in tqdm(traj_files, desc=f"Processing {os.path.basename(dir)}"):
         try:
@@ -45,13 +51,23 @@ for dir in dir_list:
             print(f"Error processing {traj_file}: {e}")
             continue
 
+    print(f"Number of traj files: {len(traj_files)}")
+    print(f"Number of valid energies: {len(valid_energies)}")
+
     # Save valid energies if any are found
     if valid_energies:
         output_path = os.path.join(dir, "valid_energies.pkl")
-        
+        min_energy = min(valid_energies.values())
+        min_config = [key for key, value in valid_energies.items() if value == min_energy]
+
         with open(output_path, 'wb') as pickle_file:
             pickle.dump(valid_energies, pickle_file)
-        
-        print(f"Valid energies saved to {output_path}")
+
+        print(f"Minimum energy: {min_energy} for {min_config}")
+        # save this as a text file
+        with open(os.path.join(dir, "min_energy.txt"), "w") as f:
+            f.write(f"Minimum energy: {min_energy} for {min_config}")
+
+        #print(f"Valid energies saved to {output_path}")
     else:
         print(f"No valid energies found for {dir}")
