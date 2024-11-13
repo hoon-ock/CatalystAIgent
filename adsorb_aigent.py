@@ -25,16 +25,6 @@ class AdaptReasoningParser(BaseModel):
         description="preamble to reasoning modules"
     )  
 
-# class AdaptSolutionParser(BaseModel):
-#     """Information gathering plan"""
-
-#     human_solution: Optional[List[str]] = Field(description="Human help in solving the problem")
-
-#     solution: List[str] = Field(
-#         description="Detailed adsorption configurations likely to be the most stable configuration, including adsorption site type, binding atoms in the adsorbate and surface, the number of binding atoms"
-#     )
-
-
 
 class AdaptSolutionParser(BaseModel):
     """Information gathering plan"""
@@ -62,17 +52,6 @@ class AdaptIndexParser(BaseModel):
     solution: List[int] = Field(
         description="Indices of the binding atoms in the adsorbate (0-based indexing)"
     )
-
-# Critique 1: Site Type Matching Binding Surface Atoms
-# class SiteTypeCriticParser(BaseModel):
-#     """Critique for site type matching binding surface atoms"""
-#     solution: int = Field(description="1 if the site type matches the number of binding surface atoms, otherwise 0")
-
-# # Critique 2: Orientation Matching Binding Atoms in the Adsorbate
-# class OrientationCriticParser(BaseModel):
-#     """Critique for orientation matching binding atoms in the adsorbate"""
-#     solution: int = Field(description="1 if the orientation matches the binding atoms in the adsorbate, otherwise 0")
-
 
 def info_reasoning_adapter(model, parser=AdaptReasoningParser):
     information_gathering_adapt_prompt = PromptTemplate(
@@ -370,6 +349,10 @@ def run_adsorb_aigent(config):
         relaxed_adslab = read(target_traj_path)
         site_analyzer = SiteAnalyzer(relaxed_adslab)
         binding_info = site_analyzer.binding_info[0]
+        ################################################
+        # There is a chance that the relaxed adslab selected based on the min energy might not be the valid structure
+        # So, we need to check the validity of the relaxed adslab first
+        ################################################
         print("Convert binding information to text...")
         structure_adapter = structure_analyzer(model=llm_model)
         structure_result = structure_adapter.invoke({
@@ -525,119 +508,4 @@ if __name__ == '__main__':
     # Load configuration
     config = load_config('config/adsorb_aigent.yaml')
     result = run_adsorb_aigent(config)
-    # Extract system information and agent settings
-    # system_info = config['system_info']
-    # agent_settings = config['agent_settings']
-    # paths = config['paths']
-
-    # # Initialize LLM model
-    # llm_model = ChatOpenAI(model=agent_settings['gpt_version'])
-
-    # system_id = system_info.get('system_id', None)
-    # Setup save directory
-    #save_dir = setup_paths(system_info, agent_settings['mode'], paths)
-
-    # Run the adsorb agent for a single system
     
-        #     system_info=system_info,
-        #     mode=config['agent_settings']['mode'],
-        #     metadata_path=config['paths']['metadata_path'],
-        #     question_path=config['paths']['question_path'],
-        #     knowledge_path=config['paths']['knowledge_path'],
-        #     bulk_db_path=config['paths']['bulk_db_path'],
-        #     ads_db_path=config['paths']['ads_db_path'],
-        #     llm_model=llm_model,
-        #     gnn_model=config['agent_settings']['gnn_model'],
-        #     critic_activate=config['agent_settings']['critic_activate'],
-        #     reviewer_activate=config['agent_settings']['reviewer_activate']
-        # )
-    #save_result(result, save_dir)
-
-    # Load metadata and system ID list
-    # sid_list, metadata = load_metadata(paths['metadata_path'], system_info)
-    # print('='*20)
-    # print('Number of systems:', len(sid_list))
-
-    # Process each system using the adsorb agent and save the results
-    # run_adsorb_aigent_for_systems(sid_list, config, llm_model, save_dir)
-
-# if __name__ == '__main__':
-#     import pandas as pd
-#     import numpy as np  
-#     import pickle
-#     from secret_keys import openapi_key
-#     import os
-#     os.environ["OPENAI_API_KEY"] = openapi_key
-#     from langchain_openai import ChatOpenAI
-#     import yaml
-#     import shutil
-
-#     # Load YAML file
-#     with open('config.yaml', 'r') as file:
-#         config = yaml.safe_load(file)
-
-#     # Access the variables
-#     system_info = config['system_info']
-#     agent_settings = config['agent_settings']
-#     paths = config['paths']
-    
-#     # define system_id
-#     system_id = system_info['system_id'] #"71_2537_62"
-#     num_site = system_info['num_site']
-#     random_ratio = system_info['random_ratio']
-
-#     # define settings
-#     gpt_version = agent_settings['gpt_version']
-#     gnn_model = agent_settings['gnn_model']
-#     mode = agent_settings['mode'] #"llm-guided_site_heuristic_placement" # "llm-guided"
-#     critic_activate = agent_settings['critic_activate'] #True
-#     reviwer_activate = agent_settings['reviewer_activate'] #True
-#     # define paths
-#     question_path = paths['question_path'] #"/home/hoon/llm-agent/adsorb/reasoning.txt"
-#     knowledge_path = paths['knowledge_path'] #"/home/hoon/llm-agent/adsorb/knowledge.txt"
-#     metadata_path = paths['metadata_path'] #"/home/hoon/llm-agent/adsorb/data/processed/updated_sid_to_details.pkl"
-#     bulk_db_path = paths['bulk_db_path']  #"/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/bulks.pkl"
-#     ads_db_path = paths['ads_db_path'] #"/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/adsorbates.pkl"
-#     save_dir = paths['save_dir']  #f"/home/hoon/llm-agent/results/{system_id}/"
-#     if mode == "llm-guided":
-#         tag = "llm"
-#     elif mode == "llm-guided_site_heuristic_placement": 
-#         tag = "llm_heuristic"
-#     save_dir = os.path.join(save_dir, system_id+"_"+tag)
-
-
-#     # define LLM model
-#     llm_model = ChatOpenAI(model = gpt_version)
-
-#     if system_id == "all":
-#         metadata = pd.read_pickle(metadata_path)
-#         sid_list = list(metadata.keys())
-#         print('Number of systems:', len(sid_list))
-#         breakpoint()
-#     else:
-#         sid_list = [system_id]
-
-#     # process reasoning and solution
-#     for sid in sid_list:
-#         result = run_adsorb_aigent(sid, 
-#                                    mode,
-#                                    num_site,
-#                                    random_ratio,
-#                                    metadata_path, 
-#                                    question_path, 
-#                                    knowledge_path,
-#                                    bulk_db_path,
-#                                    ads_db_path,
-#                                    llm_model,
-#                                    gnn_model,
-#                                    save_dir,
-#                                    critic_activate,
-#                                    reviwer_activate)
-#     #print(result)
-
-#         # save the result
-#         with open(os.path.join(save_dir, 'result.pkl'), 'wb') as f:
-#             pickle.dump(result, f)
-#         # copy yaml file to save_dir
-
-#         shutil.copy('config.yaml', save_dir)
