@@ -11,29 +11,70 @@ def load_config(config_file):
     
     # Print the loaded configuration
     print("Loaded Configuration:")
+    print(config_file)
     print(yaml.dump(config, default_flow_style=False))
     
     return config
 
-def setup_paths(system_info, mode, paths):
-    """Prepare save directory based on system ID and mode."""
-    system_id = system_info.get('system_id', None)
-    if system_id is None:
-        system_id = f"{system_info['ads_smiles']}_{system_info['bulk_symbol']}_{system_info['bulk_id']}_{str(system_info['miller'])}_{str(system_info['shift'])}"
+def setup_save_path(config):
+    """Set up and return a unique save path based on the configuration name."""
     
-    save_dir = paths['save_dir']
-    # tag = "llm" if mode == "llm-guided" else "llm_heur"
-    save_path = os.path.join(save_dir, f"{system_id}")
-    if not os.path.exists(save_path):
-        os.makedirs(save_path)
-    else:
-        # make copy version
+    # Extract base save directory and configuration name (without file extension)
+    # config_name = os.path.splitext(config['config_name'])[0]
+    save_dir = config['paths']['save_dir']
+    
+    # Construct the initial save path
+    save_path = os.path.join(save_dir, config['config_name'])
+    
+    # Ensure the save path is unique by appending an index if necessary
+    if os.path.exists(save_path):
         i = 1
         while os.path.exists(f"{save_path}_{i}"):
             i += 1
         save_path = f"{save_path}_{i}"
     
+    # Create the directory if it does not exist
+    os.makedirs(save_path, exist_ok=True)
+    
     return save_path
+
+# def setup_paths(system_info, paths, mode='agent'):
+#     """
+#     system_info: system information in config yaml
+#     paths: paths in config yaml
+#     mode: 'agent' or 'ocp'
+#     """
+#     system_id = system_info.get('system_id', None)
+#     if system_id is None:
+#         ads = system_info['ads_smiles']
+#         bulk_id = system_info['bulk_id']
+#         bulk_symbol = system_info['bulk_symbol']
+#         miller = str(system_info['miller']).replace(" ", "")
+#         shift = str(system_info.get('shift', 'NA'))
+#         #system_id = f"{system_info['ads_smiles']}_{system_info['bulk_symbol']}_{system_info['bulk_id']}_{str(system_info['miller'])}_{str(system_info['shift'])}"
+        
+#     else:
+#         metadata_path = paths['metadata_path']
+#         info = load_info_from_metadata(system_id, metadata_path)
+#         bulk_id, miller, shift, top, ads, bulk_symbol = info
+#         #bulk_id, miller, _, _, ads, bulk_symbol = info
+#         if mode == 'ocp':
+#             shift = 'NA'
+#         miller = str(miller).replace(" ", "")
+#     save_name = f"{ads}_{bulk_symbol}_{bulk_id}_{miller}_{shift}"
+#     save_dir = paths['save_dir']
+#     # tag = "llm" if mode == "llm-guided" else "llm_heur"
+#     save_path = os.path.join(save_dir, f"{save_name}")
+#     if not os.path.exists(save_path):
+#         os.makedirs(save_path)
+#     else:
+#         # make copy version
+#         i = 1
+#         while os.path.exists(f"{save_path}_{i}"):
+#             i += 1
+#         save_path = f"{save_path}_{i}"
+    
+#     return save_path
     #return os.path.join(save_dir, f"{system_id}")
 
 def load_metadata(metadata_path, system_id):
@@ -43,7 +84,7 @@ def load_metadata(metadata_path, system_id):
         return list(metadata.keys()), metadata
     return [system_id], None
 
-def save_result(result, save_dir):
+def save_result(result, config, save_dir):
     """Save the result as a pickle file and copy configuration for record."""
     result_path = os.path.join(save_dir, 'result.pkl')
     with open(result_path, 'wb') as f:
@@ -58,8 +99,16 @@ def save_result(result, save_dir):
     # with open(result_path, 'w') as f:
     #     json.dump(result, f)  # indent=4 for pretty printing
     
+    
+    # save config in the directory
+    config_name = config['config_name']
+    config_path = os.path.join(save_dir, f'{config_name}.yaml')
+    with open(config_path, 'w') as f:
+        yaml.dump(config, f)
+
+
     # Copy config file for reproducibility
-    shutil.copy('config/adsorb_aigent.yaml', save_dir)
+    # shutil.copy('config/adsorb_aigent.yaml', save_dir)
 
 
 
