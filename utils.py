@@ -1,8 +1,9 @@
 import pandas as pd
-import os, yaml, pickle, shutil, json
+import os, yaml, pickle, shutil, json, ast
 from fairchem.core.models.model_registry import model_name_to_local_file
 from fairchem.core.common.relaxation.ase_utils import OCPCalculator
 from ase.optimize import BFGS
+
 
 def load_config(config_file):
     """Load configuration settings from a YAML file and print them."""
@@ -16,7 +17,7 @@ def load_config(config_file):
     
     return config
 
-def setup_save_path(config):
+def setup_save_path(config, duplicate=True):
     """Set up and return a unique save path based on the configuration name."""
     
     # Extract base save directory and configuration name (without file extension)
@@ -26,14 +27,16 @@ def setup_save_path(config):
     # Construct the initial save path
     save_path = os.path.join(save_dir, config['config_name'])
     
-    # Ensure the save path is unique by appending an index if necessary
-    if os.path.exists(save_path):
-        i = 1
-        while os.path.exists(f"{save_path}_{i}"):
-            i += 1
-        save_path = f"{save_path}_{i}"
-    
-    # Create the directory if it does not exist
+    if duplicate:
+        # Ensure the save path is unique by appending an index if necessary
+        if os.path.exists(save_path):
+            i = 1
+            while os.path.exists(f"{save_path}_{i}"):
+                i += 1
+            save_path = f"{save_path}_{i}"
+
+        # Create the directory if it does not exist
+
     os.makedirs(save_path, exist_ok=True)
     
     return save_path
@@ -76,6 +79,25 @@ def setup_save_path(config):
     
 #     return save_path
     #return os.path.join(save_dir, f"{system_id}")
+
+
+def load_system_info(system_info, metadata_path):
+    system_id = system_info.get('system_id', None)
+    if system_id is None:
+        ads = system_info['ads_smiles']
+        bulk_id = system_info['bulk_id']
+        bulk_symbol = system_info['bulk_symbol']
+        miller = str(system_info['miller'])
+        shift = system_info['shift']
+        top = system_info['top']
+    else:
+        # metadata_path = paths['metadata_path']
+        bulk_id, miller, shift, top, ads, bulk_symbol = load_info_from_metadata(system_id, metadata_path)
+    if not isinstance(miller, tuple):
+        miller = ast.literal_eval(miller)
+    print(f"bulk_id: {bulk_id}, miller: {miller}, shift: {shift}, top: {top}, ads: {ads}, bulk_symbol: {bulk_symbol}")
+    return bulk_id, miller, shift, top, ads, bulk_symbol
+ 
 
 def load_metadata(metadata_path, system_id):
     """Load metadata or extract system ID list if applicable."""

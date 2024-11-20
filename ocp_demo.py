@@ -12,6 +12,7 @@ config = load_config('config/adsorb_agent.yaml')
 paths = config['paths']
 system_path = paths['system_dir']
 system_config_files = glob.glob(system_path + '/*.yaml')
+system_config_files.sort()
 
 for config_file in system_config_files:
     config_name = os.path.basename(config_file)
@@ -21,26 +22,27 @@ for config_file in system_config_files:
     config['paths'] = paths
     config['config_name'] = config_name
     save_dir = setup_save_path(config)
+    # # if savd_dir already exists, skip this config
+    # if os.path.exists(save_dir):
+    #     breakpoint()
+    #     print(f"Skip: {config_name} already exists")
+    #     continue
+    # else:
+    #     os.makedirs(save_dir, exist_ok=True)
 
-
+    # breakpoint()
     system_info = config['system_info']
-    system_id = system_info.get('system_id', None)
-    if system_id is None:
-        ads = system_info['ads_smiles']
-        bulk_id = system_info['bulk_id']
-        bulk_symbol = system_info['bulk_symbol']
-        miller = str(system_info['miller'])
-        shift = system_info['shift']
-        top = system_info['top']
-    else:
-        metadata_path = paths['metadata_path']
-        bulk_id, miller, shift, top, ads, bulk_symbol = load_info_from_metadata(system_id, metadata_path)
-        
-    if not isinstance(miller, tuple):
-        miller = ast.literal_eval(miller)
+    metadata_path = paths['metadata_path']
+    try:
+        bulk_id, miller, shift, top, ads, bulk_symbol = load_system_info(system_info, metadata_path)
+    except:
+        print(f"Error: {config_name} is not a valid config file")
+        continue
+    
 
 
     async def main():
+        slab_selected = None
         results = await find_adsorbate_binding_sites(adsorbate=ads, 
                                                      bulk=bulk_id, 
                                                      adslab_filter=keep_slabs_with_miller_indices([miller]))
@@ -54,7 +56,11 @@ for config_file in system_config_files:
                 break
         
 
-        assert slab_selected is not None, f"Slab with miller {miller} and shift {shift} not found"
+        # assert slab_selected is not None, f"Slab with miller {miller} and shift {shift} not found"
+        # Check if slab_selected was found; if not, log and skip this config
+        if slab_selected is None:
+            print(f"Warning: No matching slab found for miller {miller} and shift {shift} in {config_name}")
+            return  # Exit the `main` function for this config
         # breakpoint()
         with open(os.path.join(save_dir, "full_result.json"), 'w') as f:
             f.write(results.to_json())
@@ -74,3 +80,4 @@ for config_file in system_config_files:
     # Run the async function
     asyncio.run(main())
 
+print('============ Completed! ============')

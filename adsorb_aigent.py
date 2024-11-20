@@ -181,7 +181,7 @@ def index_extractor(model, parser=AdaptIndexParser):
     return adapter
 
 
-def run_adsorb_aigent(config):
+def singlerun_adsorb_aigent(config):
     system_info = config['system_info']
     agent_settings = config['agent_settings']
     paths = config['paths']
@@ -205,7 +205,9 @@ def run_adsorb_aigent(config):
     if reviewer_activate:
         num_site = int(num_site/2)
     random_ratio = agent_settings['random_ratio']
-    save_dir = setup_paths(system_info, agent_settings['mode'], paths) 
+    #save_dir = setup_paths(system_info, paths) 
+    save_dir = setup_save_path(config)
+    #breakpoint()
     # Reasoning step
     print("Reasoning step...")
     reasoning_adapter = info_reasoning_adapter(model=llm_model)
@@ -313,9 +315,13 @@ def run_adsorb_aigent(config):
         })
         adsorbate.binding_indices = np.array(index_result.solution)
 
-    # breakpoint()
-    adslabs_ = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
-    adslabs = [*adslabs_.atoms_list]
+    #breakpoint()
+    try:
+        adslabs_ = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
+        adslabs = [*adslabs_.atoms_list]
+    except:
+        print("Error in creating adslabs. Skipping to the next system.")
+        adslabs = []
     # if there is no adslabs, continue to the next system
     if len(adslabs) == 0:
         print("No selected configurations. Skipping to the next system.")
@@ -479,28 +485,35 @@ def run_adsorb_aigent(config):
     # Return the result as a dictionary with an ID (replace 'some_id' with actual identifier logic if needed)
     # result = {system_id: result_dict}
     print("Result:", result_dict)
-    save_result(result_dict, save_dir)
+    save_result(result_dict, config, save_dir)
     return result_dict
 
 
-def multirun_adsorb_aigent(multirun_config):
-    agent_settings = multirun_config['agent_settings']
-    paths = multirun_config['paths']
+def multirun_adsorb_aigent(setting_config):
+    #breakpoint()
+    agent_settings = setting_config['agent_settings']
+    paths = setting_config['paths']
     # open system_path (directory)
     system_path = paths['system_dir']
     # with open(system_path, 'r') as f:
     #     systems = json.load(f)
     system_config_files = glob.glob(system_path + '/*.yaml')
+    system_config_files.sort()
 
-    for config in system_config_files:
-        config = load_config(config)
-        system_info = config['system_info']
+    for config_file in system_config_files:
+        config_name = os.path.basename(config_file)
+        config_name = config_name.split('.')[0]
+        
+        config = load_config(config_file)
+        config['config_name'] = config_name
 
         # combine agent_settings, paths, and system_info
         config['agent_settings'] = agent_settings
         config['paths'] = paths
+        # breakpoint()
         
-        result = run_adsorb_aigent(config)
+        singlerun_adsorb_aigent(config)
+    print('============ Completed! ============')
 
 
 # def run_adsorb_aigent_for_systems(sid_list, config, llm_model, save_dir):
@@ -526,26 +539,36 @@ def multirun_adsorb_aigent(multirun_config):
 
 
 if __name__ == '__main__':
+    # import argparse
+    # parser = argparse.ArgumentParser(description='Run Adsorb Agent for single or multiple systems.')
+    # parser.add_argument('--singlerun', type=str, metavar='CONFIG_FILE', 
+    #                     help='Path to configuration file for a single system run')
+    # parser.add_argument('--multirun', type=str, metavar='CONFIG_FILE', 
+    #                     help='Path to configuration file for a multirun')
+    # args = parser.parse_args()
+
+    # if args.singlerun:
+    #     # Load and run single system configuration
+    #     config = load_config(args.singlerun)
+    #     singlerun_adsorb_aigent(config)
+    # elif args.multirun:
+    #     # Load and run multirun configuration
+    #     multirun_config = load_config(args.multirun)
+    #     multirun_adsorb_aigent(multirun_config)
+    # else:
+    #     print("Please specify either --singlerun or --multirun with a configuration file.")
     import argparse
-    parser = argparse.ArgumentParser(description='Run Adsorb Agent for single or multiple systems.')
-    parser.add_argument('--singlerun', type=str, metavar='CONFIG_FILE', 
-                        help='Path to configuration file for a single system run')
-    parser.add_argument('--multirun', type=str, metavar='CONFIG_FILE', 
-                        help='Path to configuration file for a multirun')
+    parser = argparse.ArgumentParser(description='Config file path')
+    parser.add_argument('--path', type=str, metavar='CONFIG_FILE', 
+                        help='Path to configuration file')
     args = parser.parse_args()
 
-    if args.singlerun:
-        # Load and run single system configuration
-        config = load_config(args.singlerun)
-        run_adsorb_aigent(config)
-    elif args.multirun:
-        # Load and run multirun configuration
-        multirun_config = load_config(args.multirun)
-        multirun_adsorb_aigent(multirun_config)
-    else:
-        print("Please specify either --singlerun or --multirun with a configuration file.")
-
-
+    config = load_config(args.path)
+    
+    # config = load_config('config/multirun.yaml')
+    # breakpoint()
+    multirun_adsorb_aigent(config)
+    
     # Load configuration
     # config = load_config('config/adsorb_aigent.yaml')
     # result = run_adsorb_aigent(config)

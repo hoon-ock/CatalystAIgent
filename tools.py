@@ -292,7 +292,7 @@ class DetectTrajAnomaly:
         )
         slab_connectivity = self._get_connectivity(self.final_slab_atoms)
         adslab_test = 1 in (slab_connectivity - adslab_connectivity_w_cushion)
-
+        # breakpoint()
         return any([slab_test, adslab_test])
 
     def is_adsorbate_desorbed(self):

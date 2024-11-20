@@ -2,17 +2,19 @@ from fairchem.demo.ocpapi import AdsorbateBindingSites
 from fairchem.data.oc.core import Adsorbate, Bulk, Slab, AdsorbateSlabConfig
 from tools import DetectTrajAnomaly
 import numpy as np
-import tqdm, pickle, os, glob, ast
+import pickle, os, glob, ast
+from tqdm import tqdm
 from utils import * 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, help='path to the results directory')
+parser.add_argument('--dir', type=str, help='path to the results directory')
 args = parser.parse_args()
-path = args.path
+path = args.dir
 
 # path = "/home/hoon/llm-agent/results/ocpdemo"
 
 result_dirs = os.listdir(path)
+result_dirs.sort()
 for result_dir in result_dirs:
     result_path = os.path.join(path, result_dir, 'selected_result.json')
     save_path = os.path.join(path, result_dir)
@@ -63,12 +65,12 @@ for result_dir in result_dirs:
             # slab_selected = slab_candidate
             break
 
-    adslabs_ = AdsorbateSlabConfig(slab_candidate, adsorbate, num_sites=1, mode='heuristic')
+    adslabs_ = AdsorbateSlabConfig(slab_candidate, adsorbate, mode='heuristic') #num_sites=1,
     adslabs = [*adslabs_.atoms_list]
     init_image = adslabs[0]
-
+    
     config_idx = 0
-    for config in slab_selected.configs:
+    for config in tqdm(slab_selected.configs, desc=f"Processing {result_dir}"):
         fin_image = config.to_ase_atoms()
         tags = fin_image.get_tags()
         anomaly_detector = DetectTrajAnomaly(init_image, fin_image, tags, surface_change_cutoff_multiplier=2.0)
@@ -88,6 +90,9 @@ for result_dir in result_dirs:
         config_idx += 1
 
     # Minimum energy
+    if len(valid_energy) == 0:
+        print(f'No valid energies found: {result_dir}')
+        continue
     min_energy = min(valid_energy.values())
     min_config = [key for key, value in valid_energy.items() if value == min_energy][0]
     print(f'Minimum energy: {min_energy}')
