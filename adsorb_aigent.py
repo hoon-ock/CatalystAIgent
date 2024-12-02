@@ -195,13 +195,14 @@ def singlerun_adsorb_aigent(config):
     critic_activate = agent_settings['critic_activate']
     reviewer_activate = agent_settings['reviewer_activate']
     mode = agent_settings['mode']
+    init_multiplier = agent_settings['init_multiplier']
 
     # Derive the initial input prompt from system_id
     observations = derive_input_prompt(system_info, metadata_path)
     print("Input Prompt:", observations)
     reasoning_questions=load_text_file(question_path)
     knowledge_statements=load_text_file(knowledge_path)
-    num_site = system_info['num_site']
+    num_site = int(system_info['num_site']*init_multiplier)
     if reviewer_activate:
         num_site = int(num_site/2)
     random_ratio = agent_settings['random_ratio']
@@ -480,7 +481,7 @@ def singlerun_adsorb_aigent(config):
     result_dict['min_energy'] = min_energy
     result_dict['min_idx'] = min_idx
     result_dict['critic_loop_count'] = [critic_loop_count1, critic_loop_count2] if reviewer_activate else critic_loop_count1
-    result_dict['config_no_count'] = [i+1, j+1] if reviewer_activate else i
+    result_dict['config_no_count'] = [i+1, j+1] if reviewer_activate else i+1
 
     # Return the result as a dictionary with an ID (replace 'some_id' with actual identifier logic if needed)
     # result = {system_id: result_dict}
