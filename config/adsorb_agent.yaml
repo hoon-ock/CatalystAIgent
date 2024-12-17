@@ -1,0 +1,17 @@
+agent_settings:
+  gpt_version: "gpt-4o"
+  gnn_model: "EquiformerV2-31M-S2EF-OC20-All+MD"
+  mode: "llm-guided" #"llm-guided" #"llm-guided_site_heuristic_placement"
+  critic_activate: false #true
+  reviewer_activate: false #true
+  random_ratio: 0.2
+  init_multiplier: 1.0
+
+paths:
+  question_path: "/home/hoon/llm-agent/reasoning/reasoning.txt"
+  knowledge_path: "/home/hoon/llm-agent/reasoning/knowledge.txt"
+  metadata_path: "/home/hoon/llm-agent/adsorb/data/processed/updated_sid_to_details.pkl"
+  bulk_db_path: "/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/bulks.pkl"
+  ads_db_path: "/home/hoon/llm-agent/fairchem-forked/src/fairchem/data/oc/databases/pkls/adsorbates.pkl"
+  save_dir: "/home/hoon/llm-agent/results/agent/no-critic_SET3" #multirun_llm_full/"
+  system_dir: "/home/hoon/llm-agent/config/analysis" # save the systems information as json file!
