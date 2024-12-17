@@ -130,7 +130,7 @@ def structure_analyzer(model, parser=AdaptSolutionParser):
 
 
 
-def site_type_critic(model, parser=AdaptCriticParser):
+def surface_critic(model, parser=AdaptCriticParser):
     site_type_prompt = PromptTemplate(
         input_variables=["observations", "adsorption_site_type", "binding_atoms_on_surface","knowledge"],
         template=(
@@ -147,7 +147,7 @@ def site_type_critic(model, parser=AdaptCriticParser):
     return adapter
 
 
-def orientation_critic(model, parser=AdaptCriticParser):
+def adsorbate_critic(model, parser=AdaptCriticParser):
     orientation_prompt = PromptTemplate(
         input_variables=["observations", "binding_atoms_in_adsorbate",  "orientation_of_adsorbate","knowledge"],
         template=(
@@ -163,7 +163,7 @@ def orientation_critic(model, parser=AdaptCriticParser):
     adapter = orientation_prompt | model.with_structured_output(parser)
     return adapter
 
-def index_extractor(model, parser=AdaptIndexParser):
+def binding_indexer(model, parser=AdaptIndexParser):
     prompt_template = PromptTemplate(
         input_variables=["observations", "atomic_numbers"],
         template=(
@@ -216,10 +216,10 @@ def singlerun_adsorb_aigent(config):
         "observations": observations,
         "reasoning": reasoning_questions,
     })
-    site_critic_valid = False
-    orientation_critic_valid = False
+    surface_critic_valid = False
+    adsorbate_critic_valid = False
     critic_loop_count1 = 0
-    while not (site_critic_valid and orientation_critic_valid):
+    while not (surface_critic_valid and adsorbate_critic_valid):
         # Solution step
         print("Solution step...")
         solution_adapter = solution_planner(model=llm_model)
@@ -232,38 +232,38 @@ def singlerun_adsorb_aigent(config):
         if critic_activate:
             # Apply critic to evaluate the solution
             print("Critique step...")
-            site_critic_adapter = site_type_critic(model=llm_model)
-            site_critic_result = site_critic_adapter.invoke({
+            surface_critic_adapter = surface_critic(model=llm_model)
+            surface_critic_result = surface_critic_adapter.invoke({
                 "observations": observations,
                 "adsorption_site_type": solution_result.adsorption_site_type,
                 "binding_atoms_on_surface": solution_result.binding_atoms_on_surface,
                 "knowledge": knowledge_statements,  
             })
 
-            orientation_critic_adapter = orientation_critic(model=llm_model)
-            orientation_critic_result = orientation_critic_adapter.invoke({
+            adsorbate_critic_adapter = adsorbate_critic(model=llm_model)
+            adsorbate_critic_result = adsorbate_critic_adapter.invoke({
                 "observations": observations,
                 "binding_atoms_in_adsorbate": solution_result.binding_atoms_in_adsorbate,
                 "orientation_of_adsorbate": solution_result.orientation_of_adsorbate,
                 "knowledge": knowledge_statements,  
             })
             # Check if the critiques are valid
-            site_critic_valid = site_critic_result.solution == 1
-            orientation_critic_valid = orientation_critic_result.solution == 1
+            surface_critic_valid = surface_critic_result.solution == 1
+            adsorbate_critic_valid = adsorbate_critic_result.solution == 1
             critic_loop_count1 += 1
             print(f"critic loop count: {critic_loop_count1}")
             # Check if the critiques are valid
-            # if not (site_critic_valid and orientation_critic_valid):
+            # if not (surface_critic_valid and adsorbate_critic_valid):
             #     print("Critique failed. Retrying...")
-            if not site_critic_valid:
+            if not surface_critic_valid:
                 print("Site type critique failed. Retrying...")
                 print(f"Site type: {solution_result.adsorption_site_type}, Binding surface atoms: {solution_result.binding_atoms_on_surface}")
-            if not orientation_critic_valid:
+            if not adsorbate_critic_valid:
                 print("Orientation critique failed. Retrying...")
                 print(f"Orientation: {solution_result.orientation_of_adsorbate}, Binding atoms in adsorbate: {solution_result.binding_atoms_in_adsorbate}")
         else:
-            site_critic_valid = True
-            orientation_critic_valid = True
+            surface_critic_valid = True
+            adsorbate_critic_valid = True
 
 
     config_result = {'site_type': solution_result.adsorption_site_type,
@@ -309,7 +309,7 @@ def singlerun_adsorb_aigent(config):
     adsorbate = Adsorbate(adsorbate_smiles_from_db=ads, adsorbate_db_path=ads_db_path)
     
     if mode == "llm-guided":
-        index_adapter = index_extractor(model=llm_model)
+        index_adapter = binding_indexer(model=llm_model)
         index_result = index_adapter.invoke({
             "observations": solution_result.text,
             "atomic_numbers": adsorbate.atoms.numbers,
@@ -352,8 +352,8 @@ def singlerun_adsorb_aigent(config):
     # step 4: run the relaxations again
     # step 5: find the minimum energy configuration again
     if reviewer_activate:
-        site_critic_valid = False
-        orientation_critic_valid = False
+        surface_critic_valid = False
+        adsorbate_critic_valid = False
         critic_loop_count2 = 0
 
         target_traj_path = os.path.join(traj_dir, f"config_{min_idx}.traj")
@@ -370,11 +370,11 @@ def singlerun_adsorb_aigent(config):
             "observations": observations,
             "binding_information": binding_info,
         })
-        site_critic_valid = False
-        orientation_critic_valid = False
+        surface_critic_valid = False
+        adsorbate_critic_valid = False
         critic_loop_count2 = 0
 
-        while not (site_critic_valid and orientation_critic_valid):
+        while not (surface_critic_valid and adsorbate_critic_valid):
             print("Review step...")
             review_adapter = solution_reviewer(model=llm_model)
             review_result = review_adapter.invoke({
@@ -386,38 +386,38 @@ def singlerun_adsorb_aigent(config):
             if critic_activate:
                 # Apply critic to evaluate the solution
                 print("Critique step... (2)")
-                site_critic_adapter = site_type_critic(model=llm_model)
-                site_critic_result = site_critic_adapter.invoke({
+                surface_critic_adapter = surface_critic(model=llm_model)
+                surface_critic_result = surface_critic_adapter.invoke({
                     "observations": observations,
                     "adsorption_site_type": review_result.adsorption_site_type,
                     "binding_atoms_on_surface": review_result.binding_atoms_on_surface,
                     "knowledge": knowledge_statements,  
                 })
 
-                orientation_critic_adapter = orientation_critic(model=llm_model)
-                orientation_critic_result = orientation_critic_adapter.invoke({
+                adsorbate_critic_adapter = adsorbate_critic(model=llm_model)
+                adsorbate_critic_result = adsorbate_critic_adapter.invoke({
                     "observations": observations,
                     "binding_atoms_in_adsorbate": review_result.binding_atoms_in_adsorbate,
                     "orientation_of_adsorbate": review_result.orientation_of_adsorbate,
                     "knowledge": knowledge_statements,  
                 })
                 # Check if the critiques are valid
-                site_critic_valid = site_critic_result.solution == 1
-                orientation_critic_valid = orientation_critic_result.solution == 1
+                surface_critic_valid = surface_critic_result.solution == 1
+                adsorbate_critic_valid = adsorbate_critic_result.solution == 1
                 critic_loop_count2 += 1
                 print(f"critic loop count: {critic_loop_count2}")
                 # Check if the critiques are valid
-                # if not (site_critic_valid and orientation_critic_valid):
+                # if not (surface_critic_valid and adsorbate_critic_valid):
                 #     print("Critique failed. Retrying...")
-                if not site_critic_valid:
+                if not surface_critic_valid:
                     print("Site type critique failed. Retrying...")
                     print(f"Site type: {review_result.adsorption_site_type}, Binding surface atoms: {review_result.binding_atoms_on_surface}")
-                if not orientation_critic_valid:
+                if not adsorbate_critic_valid:
                     print("Orientation critique failed. Retrying...")
                     print(f"Orientation: {review_result.orientation_of_adsorbate}, Binding atoms in adsorbate: {review_result.binding_atoms_in_adsorbate}")
             else:
-                site_critic_valid = True
-                orientation_critic_valid = True
+                surface_critic_valid = True
+                adsorbate_critic_valid = True
 
         review_config_result = {'site_type': review_result.adsorption_site_type,
                         'site_atoms': review_result.binding_atoms_on_surface,
@@ -450,7 +450,7 @@ def singlerun_adsorb_aigent(config):
         # without this part, it's impossible to implement the initial placement properly!!
         adsorbate = Adsorbate(adsorbate_smiles_from_db=ads, adsorbate_db_path=ads_db_path)
         if mode == "llm-guided":
-            index_adapter = index_extractor(model=llm_model)
+            index_adapter = binding_indexer(model=llm_model)
             index_result = index_adapter.invoke({
                 "observations": solution_result.text,
                 "atomic_numbers": adsorbate.atoms.numbers,
