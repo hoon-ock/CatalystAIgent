@@ -40,8 +40,8 @@ for config_name in tqdm.tqdm(config_name_list):
     ax.hist(list(agent_valid_energy_list), bins=20, alpha=0.7, color='steelblue', label='Adsorb-Agent', edgecolor='black')
 
     # Set axis labels
-    ax.set_xlabel('Energy [eV]', fontsize=20, fontweight='bold')
-    ax.set_ylabel('Frequency', fontsize=20, fontweight='bold')
+    ax.set_xlabel('Energy [eV]', fontsize=22)
+    ax.set_ylabel('Frequency', fontsize=22)
 
     # Set tick parameters for better visibility
     ax.tick_params(axis='both', which='major', labelsize=18)

@@ -1,0 +1,9 @@
+system_info:
+  ads_smiles: '*OH'
+  bulk_id: mp-126
+  bulk_symbol: Pt
+  miller: (1,1,1)
+  num_site: 54
+  shift: 0.167
+  system_id: null
+  top: true

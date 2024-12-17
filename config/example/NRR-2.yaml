@@ -1,0 +1,9 @@
+system_info:
+  ads_smiles: '*H'
+  bulk_id: mp-1184011
+  bulk_symbol: Cu3Ag
+  miller: (1,1,1)
+  num_site: 98
+  shift: 0.063
+  system_id: null
+  top: true

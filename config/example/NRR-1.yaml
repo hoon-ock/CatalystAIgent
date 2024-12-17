@@ -1,0 +1,9 @@
+system_info:
+  ads_smiles: '*N*NH'
+  bulk_id: mp-1184119
+  bulk_symbol: CuPd3
+  miller: (1,1,1)
+  num_site: 98
+  shift: 0.063
+  system_id: null
+  top: true
