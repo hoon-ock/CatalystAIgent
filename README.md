@@ -21,6 +21,11 @@ Ensure you have the following installed:
    ```bash
    pip install -r requirements.txt
    ```
+- Git clone the `fairchem-forked` repo. 
+   This includes the adsorbate placement strategy used in this study.
+   ```bashåß
+   git clone https://github.com/hoon-ock/fairchem-forked.git
+   ```
 
 ## Running Adsorb-Agent  
 
