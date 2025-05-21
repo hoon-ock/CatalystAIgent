@@ -1,8 +1,13 @@
 from langchain_core.prompts import PromptTemplate
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI #, ChatAnthropic
 from pydantic import BaseModel
 from langchain_core.pydantic_v1 import BaseModel, Field
 from typing import List, Optional
+import sys
+from pathlib import Path
+custom_path = Path("fairchem-forked/src").resolve()
+if str(custom_path) not in sys.path:
+    sys.path.insert(0, str(custom_path))
 from fairchem.data.oc.core import Adsorbate, Bulk, Slab, AdsorbateSlabConfig
 import numpy as np
 import ast
@@ -10,10 +15,10 @@ import glob
 from ase.io import read
 from tools import SiteAnalyzer
 from utils import *
-from secret_keys import openapi_key
+from secret_keys import openapi_key, anthropic_key
 import os
 os.environ["OPENAI_API_KEY"] = openapi_key
-
+os.environ['ANTHROPIC_API_KEY'] = anthropic_key
 class AdaptReasoningParser(BaseModel):
     """Information gathering plan"""
 
@@ -190,7 +195,10 @@ def singlerun_adsorb_aigent(config):
     knowledge_path = paths['knowledge_path']
     bulk_db_path = paths['bulk_db_path']
     ads_db_path = paths['ads_db_path']
-    llm_model = ChatOpenAI(model=agent_settings['gpt_version'])
+    if agent_settings['provider'] == "openai":
+        llm_model = ChatOpenAI(model=agent_settings['version'])
+    # elif agent_settings['provider'] == "anthropic":
+    #     llm_model = ChatAnthropic(model=agent_settings['version'])
     gnn_model = agent_settings['gnn_model']
     critic_activate = agent_settings['critic_activate']
     reviewer_activate = agent_settings['reviewer_activate']
@@ -202,7 +210,8 @@ def singlerun_adsorb_aigent(config):
     print("Input Prompt:", observations)
     reasoning_questions=load_text_file(question_path)
     knowledge_statements=load_text_file(knowledge_path)
-    num_site = int(system_info['num_site']*init_multiplier)
+    # num_site = system_info.get("num_site", 0)
+    num_site = int(system_info["num_site"]*init_multiplier)
     if reviewer_activate:
         num_site = int(num_site/2)
     random_ratio = agent_settings['random_ratio']
@@ -294,6 +303,8 @@ def singlerun_adsorb_aigent(config):
     bulk_id, miller, shift, top, ads, bulk_symbol = info
     if not isinstance(miller, tuple):
         miller = ast.literal_eval(miller)
+    # if num_site == 0:
+    #     num_site = num
     # breakpoint()
     site_type = config_result['site_type']
     site_atoms = config_result['site_atoms']
@@ -307,7 +318,7 @@ def singlerun_adsorb_aigent(config):
                 slab = slab_candidate
                 break
     adsorbate = Adsorbate(adsorbate_smiles_from_db=ads, adsorbate_db_path=ads_db_path)
-    
+
     if mode == "llm-guided":
         index_adapter = binding_indexer(model=llm_model)
         index_result = index_adapter.invoke({
@@ -316,7 +327,7 @@ def singlerun_adsorb_aigent(config):
         })
         adsorbate.binding_indices = np.array(index_result.solution)
 
-    #breakpoint()
+    # breakpoint()
     try:
         adslabs_ = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
         adslabs = [*adslabs_.atoms_list]

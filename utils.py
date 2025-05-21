@@ -3,6 +3,7 @@ import os, yaml, pickle, shutil, json, ast
 from fairchem.core.models.model_registry import model_name_to_local_file
 from fairchem.core.common.relaxation.ase_utils import OCPCalculator
 from ase.optimize import BFGS
+import ase.io
 
 
 def load_config(config_file):
@@ -178,12 +179,26 @@ def load_info_from_metadata(system_id, metadata_path):
     top = metadata[system_id][3]
     ads = metadata[system_id][4] #.replace("*", "")  
     bulk = metadata[system_id][5]
-    return bulk_id, miller, shift, top, ads, bulk
+    # # if metadata[system_id][6] exists
+    # if metadata[system_id][6]:
+    #     num_site = metadata[system_id][6]
+    # else:
+    #     num_site = None  # Handle the case where metadata[system_id][6] does not exist
+    return bulk_id, miller, shift, top, ads, bulk #, num_site
 
-def relax_adslab(adslab, model_name, save_path):
+def relax_adslab(adslab, model_name, save_path, memory_save=True):
     checkpoint_path = model_name_to_local_file(model_name, local_cache='/tmp/fairchem_checkpoints/')
     calc = OCPCalculator(checkpoint_path=checkpoint_path, cpu=False)
     adslab.calc = calc
     opt = BFGS(adslab, trajectory=save_path)
     opt.run(fmax=0.05, steps=100)    
+    if memory_save:
+        # reduced trajectory only with first and last frame
+        traj = ase.io.read(save_path, ':')
+        reduced_traj = [traj[0], traj[-1]]
+        # remove the existing traj file
+        if os.path.exists(save_path):
+            os.remove(save_path)
+        # save the reduced trajectory
+        ase.io.write(save_path, reduced_traj, format='traj')  # save the reduced trajectory
     return adslab
