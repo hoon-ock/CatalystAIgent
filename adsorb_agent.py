@@ -1,5 +1,6 @@
 from langchain_core.prompts import PromptTemplate
-from langchain_openai import ChatOpenAI #, ChatAnthropic
+from langchain_openai import ChatOpenAI 
+from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel
 from langchain_core.pydantic_v1 import BaseModel, Field
 from typing import List, Optional
@@ -197,8 +198,8 @@ def singlerun_adsorb_aigent(config):
     ads_db_path = paths['ads_db_path']
     if agent_settings['provider'] == "openai":
         llm_model = ChatOpenAI(model=agent_settings['version'])
-    # elif agent_settings['provider'] == "anthropic":
-    #     llm_model = ChatAnthropic(model=agent_settings['version'])
+    elif agent_settings['provider'] == "anthropic":
+        llm_model = ChatAnthropic(model=agent_settings['version'])
     gnn_model = agent_settings['gnn_model']
     critic_activate = agent_settings['critic_activate']
     reviewer_activate = agent_settings['reviewer_activate']
@@ -225,6 +226,7 @@ def singlerun_adsorb_aigent(config):
         "observations": observations,
         "reasoning": reasoning_questions,
     })
+    # breakpoint()
     surface_critic_valid = False
     adsorbate_critic_valid = False
     critic_loop_count1 = 0
@@ -236,6 +238,7 @@ def singlerun_adsorb_aigent(config):
             "observations": observations,
             "adapter_solution_reasoning": reasoning_result.adapted_prompts,
         })
+        breakpoint()
 
 
         if critic_activate:
