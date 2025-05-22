@@ -84,7 +84,7 @@ def run_find_adsorbate_binding_sites_sync(adsorbate, bulk, miller):
 
 
 
-max_workers = 2#os.cpu_count() or 4
+max_workers = 4 #os.cpu_count() or 4
 
 with ProcessPoolExecutor(max_workers=max_workers) as executor:
     futures = [executor.submit(process_config, cfg) for cfg in system_config_files]
@@ -97,5 +97,5 @@ with ProcessPoolExecutor(max_workers=max_workers) as executor:
 
         # Optional pause every 10
         if (i + 1) % 10 == 0:
-            print("Pausing 5 seconds...")
-            time.sleep(5)
+            print("Pausing...")
+            time.sleep(10)

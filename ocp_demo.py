@@ -6,15 +6,15 @@ import numpy as np
 from fairchem.data.oc.core import Slab
 from fairchem.demo.ocpapi import find_adsorbate_binding_sites, keep_slabs_with_miller_indices
 from utils import * 
-
-
+import time
+init_time = time.time()
 config = load_config('config/adsorb_agent.yaml')
 paths = config['paths']
 system_path = paths['system_dir']
 system_config_files = glob.glob(system_path + '/*.yaml')
 system_config_files.sort()
 
-for config_file in system_config_files:
+for i, config_file in enumerate(system_config_files):
     config_name = os.path.basename(config_file)
     config_name = config_name.split('.')[0]
     org_config = load_config(config_file)
@@ -80,4 +80,11 @@ for config_file in system_config_files:
     # Run the async function
     asyncio.run(main())
 
+    # Pause every 10 iterations
+    if (i + 1) % 10 == 0:
+        print("Pausing for 5 seconds...")
+        time.sleep(5)
+
+fin_time = time.time()
+print(f"Total time: {(fin_time - init_time)/60:.2f} minutes for {len(system_config_files)} systems")
 print('============ Completed! ============')

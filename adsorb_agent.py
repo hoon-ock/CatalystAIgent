@@ -16,6 +16,8 @@ import glob
 from ase.io import read
 from tools import SiteAnalyzer
 from utils import *
+import warnings
+warnings.filterwarnings("ignore")
 from secret_keys import openapi_key, anthropic_key
 import os
 os.environ["OPENAI_API_KEY"] = openapi_key
@@ -202,7 +204,6 @@ def singlerun_adsorb_aigent(config):
         llm_model = ChatAnthropic(model=agent_settings['version'])
     gnn_model = agent_settings['gnn_model']
     critic_activate = agent_settings['critic_activate']
-    reviewer_activate = agent_settings['reviewer_activate']
     mode = agent_settings['mode']
     init_multiplier = agent_settings['init_multiplier']
 
@@ -211,14 +212,19 @@ def singlerun_adsorb_aigent(config):
     print("Input Prompt:", observations)
     reasoning_questions=load_text_file(question_path)
     knowledge_statements=load_text_file(knowledge_path)
-    # num_site = system_info.get("num_site", 0)
     num_site = int(system_info["num_site"]*init_multiplier)
-    if reviewer_activate:
-        num_site = int(num_site/2)
     random_ratio = agent_settings['random_ratio']
-    #save_dir = setup_paths(system_info, paths) 
-    save_dir = setup_save_path(config)
-    #breakpoint()
+    save_dir = setup_save_path(config, duplicate=False)
+    #########################################################################
+    # if save_dir already exists, skip this config
+    # check whether save_dir + /traj/*.traj exists
+    traj_dir = os.path.join(save_dir, "traj")
+    if os.path.exists(traj_dir):
+        traj_files = glob.glob(traj_dir + '/*.traj')
+        if len(traj_files) > 0:
+            print(f"Skip: {config['config_name']} already exists")
+            return None
+    #########################################################################
     # Reasoning step
     print("Reasoning step...")
     reasoning_adapter = info_reasoning_adapter(model=llm_model)
@@ -238,9 +244,6 @@ def singlerun_adsorb_aigent(config):
             "observations": observations,
             "adapter_solution_reasoning": reasoning_result.adapted_prompts,
         })
-        breakpoint()
-
-
         if critic_activate:
             # Apply critic to evaluate the solution
             print("Critique step...")
@@ -289,6 +292,7 @@ def singlerun_adsorb_aigent(config):
 
 
     # evaluate the energy
+    ########### structure retriever ###########
     print("Loading adslabs...")
     if system_info.get("system_id", None) is not None:
         system_id = system_info.get("system_id", None)
@@ -302,17 +306,13 @@ def singlerun_adsorb_aigent(config):
         system_info.get("ads_smiles"),
         system_info.get("bulk_symbol")
     ]
-
     bulk_id, miller, shift, top, ads, bulk_symbol = info
     if not isinstance(miller, tuple):
         miller = ast.literal_eval(miller)
     # if num_site == 0:
     #     num_site = num
-    # breakpoint()
     site_type = config_result['site_type']
     site_atoms = config_result['site_atoms']
-
-    
     bulk = Bulk(bulk_src_id_from_db=bulk_id, bulk_db_path=bulk_db_path)
     slabs = Slab.from_bulk_get_specific_millers(bulk=bulk, specific_millers=miller)
     for slab_candidate in slabs:
@@ -329,8 +329,8 @@ def singlerun_adsorb_aigent(config):
             "atomic_numbers": adsorbate.atoms.numbers,
         })
         adsorbate.binding_indices = np.array(index_result.solution)
-
-    # breakpoint()
+        # binding_atoms = [adsorbate.atoms[i] for i in index_result.solution]
+        # breakpoint()
     try:
         adslabs_ = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
         adslabs = [*adslabs_.atoms_list]
@@ -340,16 +340,21 @@ def singlerun_adsorb_aigent(config):
     # if there is no adslabs, continue to the next system
     if len(adslabs) == 0:
         print("No selected configurations. Skipping to the next system.")
-        return None
+        # save the name of config as a failure id
+        # save the result as a txt file
+        # config_name = config['config_name'] 
+        # with open(os.path.join(save_dir, f'{config_name}.txt'), 'w') as f:
+        #     f.write(f"Error: No selected configurations for {config_name}")
 
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+        return None
+    # while len(adslabs) == 0:
+
     
+    ########### Geometry Optimizer ###########
+    print("Relaxing adslabs...")
     traj_dir = os.path.join(save_dir, "traj")
     if not os.path.exists(traj_dir):
         os.makedirs(traj_dir)
-
-    print("Relaxing adslabs...")
     relaxed_energies = []
     for i, adslab in enumerate(adslabs):
         save_path = os.path.join(traj_dir, f"config_{i}.traj")
@@ -358,147 +363,16 @@ def singlerun_adsorb_aigent(config):
 
     min_energy = np.min(relaxed_energies)
     min_idx = np.argmin(relaxed_energies)
-
-    # Review the relaxed configurations
-    # step 1: load the relaxed adslab with the min energy
-    # step 2: implement the reivew module to update the configuration
-    # step 3: place the adsorbate on the surface based on the updated configuration
-    # step 4: run the relaxations again
-    # step 5: find the minimum energy configuration again
-    if reviewer_activate:
-        surface_critic_valid = False
-        adsorbate_critic_valid = False
-        critic_loop_count2 = 0
-
-        target_traj_path = os.path.join(traj_dir, f"config_{min_idx}.traj")
-        relaxed_adslab = read(target_traj_path)
-        site_analyzer = SiteAnalyzer(relaxed_adslab)
-        binding_info = site_analyzer.binding_info[0]
-        ################################################
-        # There is a chance that the relaxed adslab selected based on the min energy might not be the valid structure
-        # So, we need to check the validity of the relaxed adslab first
-        ################################################
-        print("Convert binding information to text...")
-        structure_adapter = structure_analyzer(model=llm_model)
-        structure_result = structure_adapter.invoke({
-            "observations": observations,
-            "binding_information": binding_info,
-        })
-        surface_critic_valid = False
-        adsorbate_critic_valid = False
-        critic_loop_count2 = 0
-
-        while not (surface_critic_valid and adsorbate_critic_valid):
-            print("Review step...")
-            review_adapter = solution_reviewer(model=llm_model)
-            review_result = review_adapter.invoke({
-                "initial_configuration": solution_result.text,
-                "relaxed_configuration": structure_result.text,
-                "adapter_solution_reasoning": reasoning_result.adapted_prompts,
-            })
-
-            if critic_activate:
-                # Apply critic to evaluate the solution
-                print("Critique step... (2)")
-                surface_critic_adapter = surface_critic(model=llm_model)
-                surface_critic_result = surface_critic_adapter.invoke({
-                    "observations": observations,
-                    "adsorption_site_type": review_result.adsorption_site_type,
-                    "binding_atoms_on_surface": review_result.binding_atoms_on_surface,
-                    "knowledge": knowledge_statements,  
-                })
-
-                adsorbate_critic_adapter = adsorbate_critic(model=llm_model)
-                adsorbate_critic_result = adsorbate_critic_adapter.invoke({
-                    "observations": observations,
-                    "binding_atoms_in_adsorbate": review_result.binding_atoms_in_adsorbate,
-                    "orientation_of_adsorbate": review_result.orientation_of_adsorbate,
-                    "knowledge": knowledge_statements,  
-                })
-                # Check if the critiques are valid
-                surface_critic_valid = surface_critic_result.solution == 1
-                adsorbate_critic_valid = adsorbate_critic_result.solution == 1
-                critic_loop_count2 += 1
-                print(f"critic loop count: {critic_loop_count2}")
-                # Check if the critiques are valid
-                # if not (surface_critic_valid and adsorbate_critic_valid):
-                #     print("Critique failed. Retrying...")
-                if not surface_critic_valid:
-                    print("Site type critique failed. Retrying...")
-                    print(f"Site type: {review_result.adsorption_site_type}, Binding surface atoms: {review_result.binding_atoms_on_surface}")
-                if not adsorbate_critic_valid:
-                    print("Orientation critique failed. Retrying...")
-                    print(f"Orientation: {review_result.orientation_of_adsorbate}, Binding atoms in adsorbate: {review_result.binding_atoms_in_adsorbate}")
-            else:
-                surface_critic_valid = True
-                adsorbate_critic_valid = True
-
-        review_config_result = {'site_type': review_result.adsorption_site_type,
-                        'site_atoms': review_result.binding_atoms_on_surface,
-                        'num_site_atoms': review_result.number_of_binding_atoms,
-                        'ads_bind_atoms': review_result.binding_atoms_in_adsorbate,
-                        'orient': review_result.orientation_of_adsorbate,
-                        'reasoning': review_result.reasoning,
-                        }
-        print("Loading adslabs... (2)")
-        ## when loading the adslab, the solution_result should be used!
-        #adslabs, info = load_adslabs(system_id, mode, num_site, random_ratio, config_result, metadata_path, bulk_db_path, ads_db_path)
-        # if system_info.get("system_id", None) is not None:
-        #     system_id = system_info.get("system_id", None)
-        #     info = load_info_from_metadata(system_id, metadata_path)
-        # else:
-        #     info = [
-        #     system_info.get("bulk_id"),
-        #     system_info.get("miller"),
-        #     system_info.get("shift"),
-        #     None,  # 'top' is not provided in the fallback
-        #     system_info.get("ads_smiles"),
-        #     system_info.get("bulk_symbol")
-        # ]
-        
-        # bulk_id, miller, shift, top, ads, bulk_symbol = info
-        site_type = review_config_result['site_type']
-        site_atoms = review_config_result['site_atoms']
-        # breakpoint()
-        # adsorbate line should be present in the code!!! 
-        # without this part, it's impossible to implement the initial placement properly!!
-        adsorbate = Adsorbate(adsorbate_smiles_from_db=ads, adsorbate_db_path=ads_db_path)
-        if mode == "llm-guided":
-            index_adapter = binding_indexer(model=llm_model)
-            index_result = index_adapter.invoke({
-                "observations": solution_result.text,
-                "atomic_numbers": adsorbate.atoms.numbers,
-            })
-            adsorbate.binding_indices = np.array(index_result.solution)
-
-        adslabs_ = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
-        adslabs = [*adslabs_.atoms_list]
-
-        print("Relaxing adslabs... (2)")
-        # relaxed_energies = []
-        for j, adslab in enumerate(adslabs):
-            save_path = os.path.join(traj_dir, f"config_{j+i+1}.traj")
-            adslab = relax_adslab(adslab, gnn_model, save_path)
-            relaxed_energies.append(adslab.get_potential_energy())
-
-        min_energy = np.min(relaxed_energies)
-        min_idx = np.argmin(relaxed_energies)
-
-
+    ###########################################
 
     # Convert to dictionary
     result_dict = {'system': info}
     result_dict['initial_solution'] = config_result
-    if reviewer_activate:
-        result_dict['review_solution'] = review_config_result
-    # result_dict['full_solution'] = solution_result.reasoning
     result_dict['min_energy'] = min_energy
     result_dict['min_idx'] = min_idx
-    result_dict['critic_loop_count'] = [critic_loop_count1, critic_loop_count2] if reviewer_activate else critic_loop_count1
-    result_dict['config_no_count'] = [i+1, j+1] if reviewer_activate else i+1
+    result_dict['critic_loop_count'] = critic_loop_count1
+    result_dict['config_no_count'] = i+1
 
-    # Return the result as a dictionary with an ID (replace 'some_id' with actual identifier logic if needed)
-    # result = {system_id: result_dict}
     print("Result:", result_dict)
     save_result(result_dict, config, save_dir)
     return result_dict
@@ -508,10 +382,7 @@ def multirun_adsorb_aigent(setting_config):
     #breakpoint()
     agent_settings = setting_config['agent_settings']
     paths = setting_config['paths']
-    # open system_path (directory)
     system_path = paths['system_dir']
-    # with open(system_path, 'r') as f:
-    #     systems = json.load(f)
     system_config_files = glob.glob(system_path + '/*.yaml')
     system_config_files.sort()
 
@@ -525,66 +396,21 @@ def multirun_adsorb_aigent(setting_config):
         # combine agent_settings, paths, and system_info
         config['agent_settings'] = agent_settings
         config['paths'] = paths
-        # breakpoint()
         
         singlerun_adsorb_aigent(config)
     print('============ Completed! ============')
 
 
-# def run_adsorb_aigent_for_systems(sid_list, config, llm_model, save_dir):
-#     """Iterate through system IDs, running adsorb agent for each one."""
-#     for sid in sid_list:
-#         result = run_adsorb_aigent(
-#             system_id=sid,
-#             mode=config['agent_settings']['mode'],
-#             num_site=config['system_info']['num_site'],
-#             random_ratio=config['system_info']['random_ratio'],
-#             metadata_path=config['paths']['metadata_path'],
-#             question_path=config['paths']['question_path'],
-#             knowledge_path=config['paths']['knowledge_path'],
-#             bulk_db_path=config['paths']['bulk_db_path'],
-#             ads_db_path=config['paths']['ads_db_path'],
-#             llm_model=llm_model,
-#             gnn_model=config['agent_settings']['gnn_model'],
-#             save_dir=save_dir,
-#             critic_activate=config['agent_settings']['critic_activate'],
-#             reviewer_activate=config['agent_settings']['reviewer_activate']
-#         )
-#         save_result(result, save_dir)
 
 
 if __name__ == '__main__':
-    # import argparse
-    # parser = argparse.ArgumentParser(description='Run Adsorb Agent for single or multiple systems.')
-    # parser.add_argument('--singlerun', type=str, metavar='CONFIG_FILE', 
-    #                     help='Path to configuration file for a single system run')
-    # parser.add_argument('--multirun', type=str, metavar='CONFIG_FILE', 
-    #                     help='Path to configuration file for a multirun')
-    # args = parser.parse_args()
-
-    # if args.singlerun:
-    #     # Load and run single system configuration
-    #     config = load_config(args.singlerun)
-    #     singlerun_adsorb_aigent(config)
-    # elif args.multirun:
-    #     # Load and run multirun configuration
-    #     multirun_config = load_config(args.multirun)
-    #     multirun_adsorb_aigent(multirun_config)
-    # else:
-    #     print("Please specify either --singlerun or --multirun with a configuration file.")
     import argparse
     parser = argparse.ArgumentParser(description='Config file path')
     parser.add_argument('--path', type=str, metavar='CONFIG_FILE', 
-                        help='Path to configuration file')
+                        help='Path to configuration file', default='config/adsorb_agent.yaml')
     args = parser.parse_args()
 
     config = load_config(args.path)
-    
-    # config = load_config('config/multirun.yaml')
-    # breakpoint()
     multirun_adsorb_aigent(config)
-    
-    # Load configuration
-    # config = load_config('config/adsorb_aigent.yaml')
-    # result = run_adsorb_aigent(config)
+
     
