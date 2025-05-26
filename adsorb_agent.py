@@ -11,6 +11,7 @@ if str(custom_path) not in sys.path:
     sys.path.insert(0, str(custom_path))
 from fairchem.data.oc.core import Adsorbate, Bulk, Slab, AdsorbateSlabConfig
 import numpy as np
+import torch
 import ast
 import glob
 from ase.io import read
@@ -331,15 +332,38 @@ def singlerun_adsorb_aigent(config):
         adsorbate.binding_indices = np.array(index_result.solution)
         # binding_atoms = [adsorbate.atoms[i] for i in index_result.solution]
         # breakpoint()
-    try:
-        adslabs_ = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
-        adslabs = [*adslabs_.atoms_list]
-    except:
-        print("Error in creating adslabs. Skipping to the next system.")
-        adslabs = []
+    
+    #### 
+    cutoff_multiplier = 1.1
+    adslabs = []
+    while not adslabs and cutoff_multiplier <= 1.2:
+        try:
+            adslabs_ = AdsorbateSlabConfig(
+                slab,
+                adsorbate,
+                num_sites=num_site,
+                mode=mode,
+                site_type=site_type,
+                site_atoms=site_atoms,
+                random_ratio=random_ratio,
+                cutoff_multiplier=cutoff_multiplier
+            )
+            adslabs = list(adslabs_.atoms_list)
+        except Exception:
+            print(f"Error in creating adslabs with cutoff multiplier {cutoff_multiplier}. Retrying with a higher multiplier...")
+            adslabs = []
+        cutoff_multiplier += 0.02
+    
+    # try:
+    #     adslabs_ = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
+    #     adslabs = [*adslabs_.atoms_list]
+    # except:
+    #     print("Error in creating adslabs. Skipping to the next system.")
+    #     adslabs = []
     # if there is no adslabs, continue to the next system
     if len(adslabs) == 0:
-        print("No selected configurations. Skipping to the next system.")
+        print("No selected configurations even > 1.2 cutoff multiplier. Skipping to the next system.")
+        #print("No selected configurations. Skipping to the next system.")
         # save the name of config as a failure id
         # save the result as a txt file
         # config_name = config['config_name'] 
@@ -372,6 +396,7 @@ def singlerun_adsorb_aigent(config):
     result_dict['min_idx'] = min_idx
     result_dict['critic_loop_count'] = critic_loop_count1
     result_dict['config_no_count'] = i+1
+    result_dict['cutoff_multiplier'] = cutoff_multiplier
 
     print("Result:", result_dict)
     save_result(result_dict, config, save_dir)
@@ -386,7 +411,7 @@ def multirun_adsorb_aigent(setting_config):
     system_config_files = glob.glob(system_path + '/*.yaml')
     system_config_files.sort()
 
-    for config_file in system_config_files:
+    for i, config_file in enumerate(system_config_files):
         config_name = os.path.basename(config_file)
         config_name = config_name.split('.')[0]
         
@@ -398,6 +423,11 @@ def multirun_adsorb_aigent(setting_config):
         config['paths'] = paths
         
         singlerun_adsorb_aigent(config)
+        ##### clear cuda memory #####
+
+        # print(f"Clearing GPU memory after {i} iterations...")
+        torch.cuda.empty_cache()
+
     print('============ Completed! ============')
 
 
