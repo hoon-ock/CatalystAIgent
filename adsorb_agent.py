@@ -2,7 +2,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI 
 from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel
-from langchain_core.pydantic_v1 import BaseModel, Field
+from langchain_core.pydantic_v1 import BaseModel, Field # from pydantic import BaseModel
 from typing import List, Optional
 import sys
 from pathlib import Path
@@ -21,6 +21,7 @@ import warnings
 warnings.filterwarnings("ignore")
 from secret_keys import openapi_key, anthropic_key
 import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["OPENAI_API_KEY"] = openapi_key
 os.environ['ANTHROPIC_API_KEY'] = anthropic_key
 class AdaptReasoningParser(BaseModel):
@@ -336,7 +337,7 @@ def singlerun_adsorb_aigent(config):
     #### 
     cutoff_multiplier = 1.1
     adslabs = []
-    while not adslabs and cutoff_multiplier <= 1.2:
+    while not adslabs and cutoff_multiplier <= 1.3:
         try:
             adslabs_ = AdsorbateSlabConfig(
                 slab,
@@ -352,7 +353,7 @@ def singlerun_adsorb_aigent(config):
         except Exception:
             print(f"Error in creating adslabs with cutoff multiplier {cutoff_multiplier}. Retrying with a higher multiplier...")
             adslabs = []
-        cutoff_multiplier += 0.02
+        cutoff_multiplier += 0.05
     
     # try:
     #     adslabs_ = AdsorbateSlabConfig(slab, adsorbate, num_sites=num_site, mode=mode, site_type=site_type, site_atoms=site_atoms, random_ratio=random_ratio)
@@ -362,7 +363,7 @@ def singlerun_adsorb_aigent(config):
     #     adslabs = []
     # if there is no adslabs, continue to the next system
     if len(adslabs) == 0:
-        print("No selected configurations even > 1.2 cutoff multiplier. Skipping to the next system.")
+        print("No selected configurations even > 1.3 cutoff multiplier. Skipping to the next system.")
         #print("No selected configurations. Skipping to the next system.")
         # save the name of config as a failure id
         # save the result as a txt file
@@ -382,9 +383,13 @@ def singlerun_adsorb_aigent(config):
     relaxed_energies = []
     for i, adslab in enumerate(adslabs):
         save_path = os.path.join(traj_dir, f"config_{i}.traj")
-        adslab = relax_adslab(adslab, gnn_model, save_path)
+        with torch.no_grad():
+            adslab = relax_adslab(adslab, gnn_model, save_path)
         relaxed_energies.append(adslab.get_potential_energy())
 
+        # print('Cuda memory cleared after relaxation of config', i)
+        torch.cuda.empty_cache()  # clear cuda memory after each relaxation
+        torch.cuda.ipc_collect()
     min_energy = np.min(relaxed_energies)
     min_idx = np.argmin(relaxed_energies)
     ###########################################

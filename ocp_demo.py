@@ -6,13 +6,18 @@ import numpy as np
 from fairchem.data.oc.core import Slab
 from fairchem.demo.ocpapi import find_adsorbate_binding_sites, keep_slabs_with_miller_indices
 from utils import * 
+import random
 import time
 init_time = time.time()
-config = load_config('config/adsorb_agent.yaml')
+config = load_config('config/ocpdemo.yaml')
 paths = config['paths']
 system_path = paths['system_dir']
 system_config_files = glob.glob(system_path + '/*.yaml')
-system_config_files.sort()
+# system_config_files.sort()
+# randomly shuffle the list
+
+system_config_files = random.sample(system_config_files, len(system_config_files))
+
 
 for i, config_file in enumerate(system_config_files):
     config_name = os.path.basename(config_file)
@@ -21,7 +26,7 @@ for i, config_file in enumerate(system_config_files):
     config = org_config.copy()
     config['paths'] = paths
     config['config_name'] = config_name
-    save_dir = setup_save_path(config)
+    save_dir = setup_save_path(config, duplicate=False)
     # # if savd_dir already exists, skip this config
     # if os.path.exists(save_dir):
     #     breakpoint()
@@ -29,6 +34,10 @@ for i, config_file in enumerate(system_config_files):
     #     continue
     # else:
     #     os.makedirs(save_dir, exist_ok=True)
+    full_result_path = os.path.join(save_dir, "full_result.json")
+    if os.path.exists(full_result_path):
+        print(f"Skip: {config_name} – full_result.json already exists")
+        continue
 
     # breakpoint()
     system_info = config['system_info']
@@ -80,10 +89,10 @@ for i, config_file in enumerate(system_config_files):
     # Run the async function
     asyncio.run(main())
 
-    # Pause every 10 iterations
-    if (i + 1) % 10 == 0:
-        print("Pausing for 5 seconds...")
-        time.sleep(5)
+    # # Pause every 10 iterations
+    # if (i + 1) % 10 == 0:
+    #     print("Pausing for 5 seconds...")
+    time.sleep(30)
 
 fin_time = time.time()
 print(f"Total time: {(fin_time - init_time)/60:.2f} minutes for {len(system_config_files)} systems")

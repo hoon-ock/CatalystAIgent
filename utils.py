@@ -109,14 +109,18 @@ def load_metadata(metadata_path, system_id):
 
 def save_result(result, config, save_dir):
     """Save the result as a pickle file and copy configuration for record."""
+    os.makedirs(save_dir, exist_ok=True)
     result_path = os.path.join(save_dir, 'result.pkl')
     with open(result_path, 'wb') as f:
         pickle.dump(result, f)
 
     # Save it as text file
-    result_path = os.path.join(save_dir, 'result.txt')
-    with open(result_path, 'w') as f:
-        f.write(str(result))
+    try:
+        result_path = os.path.join(save_dir, 'result.txt')
+        with open(result_path, 'w', encoding='utf-8') as f:
+            f.write(str(result))
+    except Exception as e:
+        print(f"An error occurred while saving the result: {e}")
     # result_path = os.path.join(save_dir, 'result.json')
     # # Save result in JSON format
     # with open(result_path, 'w') as f:
@@ -126,7 +130,7 @@ def save_result(result, config, save_dir):
     # save config in the directory
     config_name = config['config_name']
     config_path = os.path.join(save_dir, f'{config_name}.yaml')
-    with open(config_path, 'w') as f:
+    with open(config_path, 'w', encoding='utf-8') as f:
         yaml.dump(config, f)
 
 
