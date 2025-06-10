@@ -1,9 +1,10 @@
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI 
 from langchain_anthropic import ChatAnthropic
-from pydantic import BaseModel
-from langchain_core.pydantic_v1 import BaseModel, Field # from pydantic import BaseModel
-from typing import List, Optional
+from pydantic.v1 import BaseModel, Field, validator
+from langchain_core.pydantic_v1 import BaseModel, Field
+from langchain_deepseek import ChatDeepSeek 
+from typing import List, Optional, Union
 import sys
 from pathlib import Path
 custom_path = Path("fairchem-forked/src").resolve()
@@ -19,11 +20,13 @@ from tools import SiteAnalyzer
 from utils import *
 import warnings
 warnings.filterwarnings("ignore")
-from secret_keys import openapi_key, anthropic_key
+from secret_keys import openapi_key, anthropic_key, deepseek_key
 import os
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["OPENAI_API_KEY"] = openapi_key
 os.environ['ANTHROPIC_API_KEY'] = anthropic_key
+os.environ['DEEPSEEK_API_KEY'] = deepseek_key
+
 class AdaptReasoningParser(BaseModel):
     """Information gathering plan"""
 
@@ -63,6 +66,7 @@ class AdaptIndexParser(BaseModel):
     solution: List[int] = Field(
         description="Indices of the binding atoms in the adsorbate (0-based indexing)"
     )
+    
 
 def info_reasoning_adapter(model, parser=AdaptReasoningParser):
     information_gathering_adapt_prompt = PromptTemplate(
@@ -204,6 +208,8 @@ def singlerun_adsorb_aigent(config):
         llm_model = ChatOpenAI(model=agent_settings['version'])
     elif agent_settings['provider'] == "anthropic":
         llm_model = ChatAnthropic(model=agent_settings['version'])
+    elif agent_settings['provider'] == "deepseek":
+        llm_model = ChatDeepSeek(model=agent_settings['version']) 
     gnn_model = agent_settings['gnn_model']
     critic_activate = agent_settings['critic_activate']
     mode = agent_settings['mode']
@@ -230,10 +236,22 @@ def singlerun_adsorb_aigent(config):
     # Reasoning step
     print("Reasoning step...")
     reasoning_adapter = info_reasoning_adapter(model=llm_model)
-    reasoning_result = reasoning_adapter.invoke({
+    if agent_settings["provider"] == "openai":
+        reasoning_result = reasoning_adapter.invoke({
+            "observations": observations,
+            "reasoning": reasoning_questions,
+        })
+    elif agent_settings["provider"] == "anthropic":
+        reasoning_result = reasoning_adapter.invoke({
         "observations": observations,
         "reasoning": reasoning_questions,
-    })
+    }, max_tokens=1024)
+    elif agent_settings["provider"] == "deepseek":
+        reasoning_result = reasoning_adapter.invoke({
+            "observations": observations,
+            "reasoning": reasoning_questions,
+        }, max_tokens=1024)
+
     # breakpoint()
     surface_critic_valid = False
     adsorbate_critic_valid = False
@@ -335,6 +353,25 @@ def singlerun_adsorb_aigent(config):
         # breakpoint()
     
     #### 
+    # cutoff_multiplier = 1.1
+    # adslabs = []
+    # while not adslabs and cutoff_multiplier <= 1.2:
+    #     try:
+    #         adslabs_ = AdsorbateSlabConfig(
+    #             slab,
+    #             adsorbate,
+    #             num_sites=num_site,
+    #             mode=mode,
+    #             site_type=site_type,
+    #             site_atoms=site_atoms,
+    #             random_ratio=random_ratio,
+    #             cutoff_multiplier=cutoff_multiplier
+    #         )
+    #         adslabs = list(adslabs_.atoms_list)
+    #     except Exception:
+    #         print(f"Error in creating adslabs with cutoff multiplier {cutoff_multiplier}. Retrying with a higher multiplier...")
+    #         adslabs = []
+    #     cutoff_multiplier += 0.02
     cutoff_multiplier = 1.1
     adslabs = []
     while not adslabs and cutoff_multiplier <= 1.3:
@@ -362,6 +399,7 @@ def singlerun_adsorb_aigent(config):
     #     print("Error in creating adslabs. Skipping to the next system.")
     #     adslabs = []
     # if there is no adslabs, continue to the next system
+    # breakpoint()
     if len(adslabs) == 0:
         print("No selected configurations even > 1.3 cutoff multiplier. Skipping to the next system.")
         #print("No selected configurations. Skipping to the next system.")
@@ -386,6 +424,7 @@ def singlerun_adsorb_aigent(config):
         with torch.no_grad():
             adslab = relax_adslab(adslab, gnn_model, save_path)
         relaxed_energies.append(adslab.get_potential_energy())
+        # breakpoint()
 
         # print('Cuda memory cleared after relaxation of config', i)
         torch.cuda.empty_cache()  # clear cuda memory after each relaxation
