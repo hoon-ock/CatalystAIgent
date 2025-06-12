@@ -31,16 +31,17 @@ def gnn_switch_relaxer(result_dir, gnn_model, new_result_dir):
         return None
     
     traj_dir = os.path.join(result_dir, "traj")
+    traj_files = glob.glob(os.path.join(traj_dir, '*.traj'))
     # breakpoint()
     if os.path.exists(traj_dir):
-        traj_files = glob.glob(os.path.join(traj_dir, '*.traj'))
+        
         if len(traj_files) == 0:
             print(f"Skip: {system_id}")
             return None
     #########################################################################
     print("=" * 30)
     print(f"Relaxing system: {system_id}")
-    print(f"Num of initial configurations: {len(glob.glob(os.path.join(traj_dir, '*.traj')))}")
+    print(f"Num of initial configurations: {len(traj_files)})")
     print("=" * 30)
     
 
@@ -67,7 +68,7 @@ def gnn_switch_relaxer(result_dir, gnn_model, new_result_dir):
         new_traj_dir = os.path.join(new_result_dir, system_id, "traj")
         # breakpoint()
         os.makedirs(new_traj_dir, exist_ok=True)
-        new_save_path = os.path.join(new_traj_dir, f"config_{i}.traj")
+        new_save_path = os.path.join(new_traj_dir, file_name)
         with torch.no_grad():
             adslab = relax_adslab(adslab, gnn_model, new_save_path)
         relaxed_energies.append(adslab.get_potential_energy())
